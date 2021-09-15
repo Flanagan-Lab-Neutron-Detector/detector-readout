@@ -1,2 +1,2 @@
-# NISoC-Readout
-Comms and analysis code for use with HighPoint's NISoC readout
+# detector-readout
+Comms code for use with HighPoint's NISoC readout board
