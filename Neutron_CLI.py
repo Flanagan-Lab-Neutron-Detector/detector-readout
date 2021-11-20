@@ -39,7 +39,7 @@ def formatted_time(t):
     d = t % 365
     t //= 365
     y = t
-    return f"{y} years" if y else f"{d} days" if d else f"{h} hours" if h else "{m} minutes" if m else "{s} seconds"
+    return f"{y} years" if y else f"{d} days" if d else f"{h} hours" if h else f"{m} minutes" if m else f"{s} seconds"
 
 # Totally unnecessary progress meter ripped from the bowels of the internet
 # Print iterations progress
@@ -379,8 +379,8 @@ def read_chip_voltages(port,voltages):
     location = "."
     count = 0
     printProgressBar(0, len(voltages)*128*1024, prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
-    for idx1, j in enumerate(voltages):
-        for idx2, base_address in enumerate(range(0,67108864,65024 + 512)):
+    for idx2, base_address in enumerate(range(0,67108864,65024 + 512)):
+        for idx1, j in enumerate(voltages):
             saved_array = np.zeros((512,16))
             for idx, address in enumerate(range(base_address, base_address + 65024 + 512, 512)):
                 NDarray = handle_read_data(port, address, j, 1, 0)
