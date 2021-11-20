@@ -327,7 +327,7 @@ def read_chip_voltages(port,voltages):
                     saved_array = np.vstack((saved_array,NDarray))
                 sg.one_line_progress_meter('Getting Sweep Data', count + 1, len(voltages) * 1024 *128)
                 count+=1
-            np.savetxt(os.path.join(location,"TEST1-{}-{}.csv".format(j,base_address)), saved_array,delimiter=',')
+            np.savetxt(os.path.join(location,"TEST1-{}-{}.csv".format(j,base_address)), saved_array, fmt="%d", delimiter='')
 
     return
 

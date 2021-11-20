@@ -12,6 +12,7 @@ import os
 
 from argparse import ArgumentParser
 from functools import partial
+from datetime import timedelta
 
 
 crc_poly = 0x104C11DB7  # 0x11EDC6F41
@@ -26,9 +27,24 @@ xor_out = 0
 #from tqdm import tqdm
 crc_f = crcmod.mkCrcFun(crc_poly, rev=False, initCrc=crc_seed, xorOut=xor_out)
 
+# Helper function for displaying time prettily
+def formatted_time(t):
+    t = int(t)
+    s = t % 60
+    t //= 60
+    m = t % 60
+    t //= 60
+    h = t % 24
+    t //= 24
+    d = t % 365
+    t //= 365
+    y = t
+    return f"{y} years" if y else f"{d} days" if d else f"{h} hours" if h else "{m} minutes" if m else "{s} seconds"
+
 # Totally unnecessary progress meter ripped from the bowels of the internet
 # Print iterations progress
 def printProgressBar(iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█', printEnd = "\r"):
+    global progBarStartTime
     """
     Call in a loop to create terminal progress bar
     @params:
@@ -41,10 +57,17 @@ def printProgressBar(iteration, total, prefix = '', suffix = '', decimals = 1, l
         fill        - Optional  : bar fill character (Str)
         printEnd    - Optional  : end character (e.g. "\r", "\r\n") (Str)
     """
+    if iteration == 0:
+        progBarStartTime = time.time()
+        remainingTime = 0 #nobody cares
+    else:
+        elapsedTime = int(time.time() - progBarStartTime)
+        totalTime = int(elapsedTime * total / (iteration+1))
+        remainingTime = totalTime - elapsedTime
     percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
     filledLength = int(length * iteration // total)
     bar = fill * filledLength + '-' * (length - filledLength)
-    print(f'\r{prefix} |{bar}| {percent}% {suffix}', end = printEnd)
+    print(f'\r{prefix} |{bar}| {percent}% {suffix} / {formatted_time(remainingTime)} remaining        ', end = printEnd)
     # Print New Line on Complete
     if iteration == total: 
         print()
@@ -365,10 +388,12 @@ def read_chip_voltages(port,voltages):
                     saved_array = NDarray
                 else:
                     saved_array = np.vstack((saved_array,NDarray))
+                    #print(saved_array)
                 #sg.one_line_progress_meter('Getting Sweep Data', count + 1, len(voltages) * 1024 *128)
+                time.sleep(0.005) # This doesn't end up slowing us down much, but it does avoid costly serial timeout errors.
                 printProgressBar(count, len(voltages)*128*1024, prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
                 count+=1
-            np.savetxt(os.path.join(location,"TEST1-{}-{}.csv".format(j,base_address)), saved_array,delimiter=',')
+            np.savetxt(os.path.join(location,"TEST1-{}-{}.csv".format(j,base_address)), saved_array, fmt='%d', delimiter='')
 
     return
 
