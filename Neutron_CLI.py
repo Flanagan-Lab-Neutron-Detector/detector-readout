@@ -375,8 +375,7 @@ def get_mv(dac_code):
     gain = 10/1627*4095/3.3
     return float(gain*3.3/4095*dac_code)
 
-def read_chip_voltages(port,voltages):
-    location = "."
+def read_chip_voltages(port,voltages,location='.'):
     count = 0
     printProgressBar(0, len(voltages)*128*1024, prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
     for idx2, base_address in enumerate(range(0,67108864,65024 + 512)):
@@ -390,10 +389,10 @@ def read_chip_voltages(port,voltages):
                     saved_array = np.vstack((saved_array,NDarray))
                     #print(saved_array)
                 #sg.one_line_progress_meter('Getting Sweep Data', count + 1, len(voltages) * 1024 *128)
-                time.sleep(0.005) # This doesn't end up slowing us down much, but it does avoid costly serial timeout errors.
+                time.sleep(0.003) # This doesn't end up slowing us down much, but it does avoid costly serial timeout errors.
                 printProgressBar(count, len(voltages)*128*1024, prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
                 count+=1
-            np.savetxt(os.path.join(location,"TEST1-{}-{}.csv".format(j,base_address)), saved_array, fmt='%d', delimiter='')
+            np.savetxt(os.path.join(location,"data-{}-{}.csv".format(j,base_address)), saved_array, fmt='%d', delimiter='')
 
     return
 
@@ -422,6 +421,7 @@ def get_voltage_sweep(port,base_address,voltages,method):
         for idx1, j in enumerate(voltages):
             bit_count = handle_get_sector_bit_count(port,base_address,read_mv=j)
             bits.append(bit_count)
+            time.sleep(.003)
             printProgressBar(idx, len(voltages), prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
             #sg.one_line_progress_meter('Getting Sweep Data', idx1 + 1, len(voltages))
     if plt.fignum_exists(1):
@@ -502,6 +502,7 @@ parser.add_argument('--start', type=int, help='the lowest voltage at which to re
 parser.add_argument('--stop', type=int, help='the highest voltage at which to read the chip in mV')
 parser.add_argument('--step', type=int, help='the granularity in mV')
 parser.add_argument('-a', '--all-sectors', action='store_true', help='read entire chip rather than a single sector')
+parser.add_argument('-d', '--directory', help='folder to contain output data files (relative path)')
 
 parser.add_argument('-e', "--erase", action='store_true', help='erase data from the chip (always do this before writing)')
 
@@ -565,7 +566,10 @@ elif(args.read):
     if(args.sector):
         get_voltage_sweep(ser, args.sector, range(args.start, args.stop, args.step), 0)
     elif(args.all_sectors):
-        read_chip_voltages(ser, range(args.start, args.stop, args.step))
+        if(args.directory):
+            os.mkdir(args.directory)
+        directory = args.directory if args.directory else '.'
+        read_chip_voltages(ser, range(args.start, args.stop, args.step), location=directory)
         
 # Erase a sector or entire chip
 elif(args.erase):
