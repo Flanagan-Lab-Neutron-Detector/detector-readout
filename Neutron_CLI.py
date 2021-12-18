@@ -375,10 +375,10 @@ def get_mv(dac_code):
     gain = 10/1627*4095/3.3
     return float(gain*3.3/4095*dac_code)
 
-def read_chip_voltages(port,voltages,location='.'):
+def read_chip_voltages(port,voltages,start_address=0,location='.'):
     count = 0
     printProgressBar(0, len(voltages)*128*1024, prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
-    for idx2, base_address in enumerate(range(0,67108864,65024 + 512)):
+    for idx2, base_address in enumerate(range(start_address,67108864,65024 + 512)):
         for idx1, j in enumerate(voltages):
             saved_array = np.zeros((512,16))
             for idx, address in enumerate(range(base_address, base_address + 65024 + 512, 512)):
@@ -502,6 +502,7 @@ parser.add_argument('--start', type=int, help='the lowest voltage at which to re
 parser.add_argument('--stop', type=int, help='the highest voltage at which to read the chip in mV')
 parser.add_argument('--step', type=int, help='the granularity in mV')
 parser.add_argument('-a', '--all-sectors', action='store_true', help='read entire chip rather than a single sector')
+parser.add_argument('--start-address', type=int, help='the lowest sector of the chip to read')
 parser.add_argument('-d', '--directory', help='folder to contain output data files (relative path)')
 
 parser.add_argument('-e', "--erase", action='store_true', help='erase data from the chip (always do this before writing)')
@@ -531,6 +532,9 @@ if args.write and (not (args.sector or args.all_sectors) or args.value is None):
 if args.erase and not (args.sector or args.all_sectors):
     parser.error("--erase requires --sector or --all-sectors \n"
                  "suggested test value is --sector 800000")
+
+if args.start_address and not (args.all_sectors and args.read):
+    parser.error("--start-address may only be used in conjunction with --read and --all-sectors")
 
 
 # Check if a port is valid and assign serial object if possible
@@ -569,7 +573,8 @@ elif(args.read):
         if(args.directory):
             os.mkdir(args.directory)
         directory = args.directory if args.directory else '.'
-        read_chip_voltages(ser, range(args.start, args.stop, args.step), location=directory)
+        start_address = args.start_address if args.start_address else 0
+        read_chip_voltages(ser, range(args.start, args.stop, args.step), start_address=start_address, location=directory)
         
 # Erase a sector or entire chip
 elif(args.erase):
