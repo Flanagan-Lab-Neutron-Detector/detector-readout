@@ -24,7 +24,7 @@ def formatted_time(t):
     d = t % 365
     t //= 365
     y = t
-    return f"{y} years" if y else f"{d} days" if d else f"{h} hours" if h else f"{m} minutes" if m else f"{s} seconds"
+    return f"{y} years {d} days" if y else f"{d} days {h} hours" if d else f"{h} hours {m} minutes" if h else f"{m} minutes {s} seconds" if m else f"{s} seconds"
 
 progBarStartTime = 0
 
