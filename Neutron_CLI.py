@@ -375,10 +375,10 @@ def get_mv(dac_code):
     gain = 10/1627*4095/3.3
     return float(gain*3.3/4095*dac_code)
 
-def read_chip_voltages(port,voltages,start_address=0,location='.'):
+def read_chip_voltages(port,voltages,sectors,location='.'):
     count = 0
-    printProgressBar(0, len(voltages)*128*1024, prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
-    for idx2, base_address in enumerate(range(start_address,67108864,65024 + 512)):
+    printProgressBar(0, len(voltages)*128*len(sectors), prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
+    for idx2, base_address in enumerate(sectors):
         for idx1, j in enumerate(voltages):
             saved_array = np.zeros((512,16))
             for idx, address in enumerate(range(base_address, base_address + 65024 + 512, 512)):
@@ -390,12 +390,13 @@ def read_chip_voltages(port,voltages,start_address=0,location='.'):
                     #print(saved_array)
                 #sg.one_line_progress_meter('Getting Sweep Data', count + 1, len(voltages) * 1024 *128)
                 time.sleep(0.003) # This doesn't end up slowing us down much, but it does avoid costly serial timeout errors.
-                printProgressBar(count, len(voltages)*128*1024, prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
+                printProgressBar(count, len(voltages)*128*len(sectors), prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
                 count+=1
             np.savetxt(os.path.join(location,"data-{}-{}.csv".format(j,base_address)), saved_array, fmt='%d', delimiter='')
 
     return
 
+## No longer used
 def get_voltage_sweep(port,base_address,voltages,method):
     if not method:
         values = []
@@ -498,6 +499,7 @@ parser.add_argument('-p', '--port', help='the USB port where the chip reader is 
 
 parser.add_argument('-r',  '--read', action='store_true', help='read data from the chip')
 parser.add_argument('--sector', type=int, help='the sector of the chip to read')
+parser.add_argument('--sectors', type=int, nargs='+', help='a list of sectors of the chip to read, i.e. 0 65536 67043328')
 parser.add_argument('--start', type=int, help='the lowest voltage at which to read the chip in mV')
 parser.add_argument('--stop', type=int, help='the highest voltage at which to read the chip in mV')
 parser.add_argument('--step', type=int, help='the granularity in mV')
@@ -514,34 +516,36 @@ args = parser.parse_args()
 
 
 # Some nice argument handling to flag problems
-if args.sector and args.all_sectors:
-    parser.error("--sector and --all-sectors are incompatible")
+if (args.sector and args.all_sectors) or (args.sector and args.sectors) or (args.sectors and args.all_sectors):
+    parser.error("--sector, --sectors, and --all-sectors are incompatible")
 
 if (args.read or args.write or args.erase) and not args.port:
     parser.error("--read, --write, and --erase always require --port \n"
                  "use --list-ports to see a list of available usb ports")
     
-if args.read and (not (args.sector or args.all_sectors) or args.start is None or args.stop is None or args.step is None):
-    parser.error("--read requires --sector or all-sectors, --start, --stop, and --step \n"
+if args.read and ((args.sector is None and not args.sectors and not args.all_sectors) or args.start is None or args.stop is None or args.step is None):
+    parser.error("--read requires --sector or --sectors or all-sectors, --start, --stop, and --step \n"
                  "suggested test values are --sector 800000 --start 2000 --stop 7000 --step 1000")
 
-if args.write and (not (args.sector or args.all_sectors) or args.value is None):
-    parser.error("--write requires --value and --sector or --all-sectors \n"
+if args.write and ((args.sector is None and not args.sectors and not args.all_sectors) or args.value is None):
+    parser.error("--write requires --value and --sector or --sectors or --all-sectors \n"
                  "suggested test values are --sector 800000 --value 0x5555")
 
-if args.erase and not (args.sector or args.all_sectors):
+if args.erase and (args.sector is None and not args.all_sectors):
     parser.error("--erase requires --sector or --all-sectors \n"
                  "suggested test value is --sector 800000")
 
 if args.start_address and not (args.all_sectors and args.read):
     parser.error("--start-address may only be used in conjunction with --read and --all-sectors")
 
+if args.sectors and not (args.read or args.write):
+    parser.error('--sectors may only be used in conjunction with --read or --write')
 
 # Check if a port is valid and assign serial object if possible
 if(args.port):
     print("Checking status of port " + args.port)
     try:
-        ser = serial.Serial(args.port, 115200, bytesize = serial.EIGHTBITS,stopbits =serial.STOPBITS_ONE, parity  = serial.PARITY_NONE,timeout=2)
+        ser = serial.Serial(args.port, 115200, bytesize = serial.EIGHTBITS,stopbits =serial.STOPBITS_ONE, parity  = serial.PARITY_NONE,timeout=1)
     except serial.SerialException as e:
         print(e)
         parser.error("It appears there was a problem with your USB port")
@@ -567,14 +571,17 @@ if(args.list_ports):
 
 # Read a sector or entire chip
 elif(args.read):
+    if(args.directory):
+        os.mkdir(args.directory)
+    directory = args.directory if args.directory else '.'
+
     if(args.sector):
-        get_voltage_sweep(ser, args.sector, range(args.start, args.stop, args.step), 0)
+        read_chip_voltages(ser, range(args.start, args.stop, args.step), [args.sector], location=directory)
+    elif(args.sectors):
+        read_chip_voltages(ser, range(args.start, args.stop, args.step), args.sectors, location=directory)
     elif(args.all_sectors):
-        if(args.directory):
-            os.mkdir(args.directory)
-        directory = args.directory if args.directory else '.'
         start_address = args.start_address if args.start_address else 0
-        read_chip_voltages(ser, range(args.start, args.stop, args.step), start_address=start_address, location=directory)
+        read_chip_voltages(ser, range(args.start, args.stop, args.step), range(start_address, 2**26, 2**16), location=directory)
         
 # Erase a sector or entire chip
 elif(args.erase):
@@ -587,6 +594,9 @@ elif(args.erase):
 elif(args.write):
     if(args.sector):
         handle_program_sector(ser, args.sector, args.value)
+    elif(args.sectors):
+        for sector in args.sectors:
+            handle_program_sector(ser, args.sector, args.value)
     elif(args.all_sectors):
         handle_program_chip(ser, args.value)
         print("Writing a chip takes about 30 minutes and will continue despite the serial error that causes this macro to abort. Please wait until the chip stops flashing.")
