@@ -689,4 +689,3 @@ elif(args.write):
 #            continue
 #        read_chip_voltages(ser, range(resp_values[0], resp_values[1], resp_values[2]))
 #window.close()
-
