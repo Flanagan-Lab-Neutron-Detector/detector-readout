@@ -1,3 +1,36 @@
+msg_names = {
+    0 : "null",
+    2 : "cmd_ping",
+    3 : "rsp_ping",
+    4 : "rsp_unknown_cmd",
+    5 : "rsp_failed",
+    6 : "cmd_vt_get_bit_count_kpage",
+    7 : "rsp_vt_get_bit_count_kpage",
+    8 : "cmd_erase_chip",
+    9 : "rsp_erase_chip",
+    10 : "cmd_erase_sector",
+    11 : "rsp_erase_sector",
+    12 : "cmd_program_sector",
+    13 : "rsp_program_sector",
+    14 : "cmd_program_chip",
+    15 : "rsp_program_chip",
+    16 : "cmd_get_sector_bit_count",
+    17 : "rsp_get_sector_bit_count",
+    18 : "cmd_read_data",
+    19 : "rsp_read_data",
+    20 : "cmd_write_data",
+    21 : "rsp_write_data",
+
+    80 : "cmd_ana_get_cal_counts",
+    81 : "rsp_ana_get_cal_counts",
+    82 : "cmd_ana_set_cal_counts",
+    83 : "rsp_ana_set_cal_counts",
+    84 : "cmd_ana_set_active_counts",
+    85 : "rsp_ana_set_active_counts"
+}
+
+msg_ids = { msg_names[msg_id]: msg_id for msg_id in msg_names }
+
 class MessageValidationError(Exception):
     """Raised when there is an error validating a message"""
     pass
