@@ -1,26 +1,19 @@
 import sys
-import crcmod
+#import crcmod
 import serial
 import serial.tools.list_ports
-import struct
+#import struct
 import matplotlib.pyplot as plt
 import numpy as np
 import time
 import scipy
 import os
 
+import nisoc_readout as readout
+
 from argparse import ArgumentParser
 from functools import partial
 from datetime import timedelta
-
-crc_poly = 0x104C11DB7  # 0x11EDC6F41
-crc_seed = 0x100000007 # 0xB319AFF0
-xor_out = 0
-# CRCs are compatible with Renesas Synergy CRC hardware used the dumb way
-# for CRC32-C: seed=0, xor_out=0, poly=0x11EDC6F41, reverse=false, reverse order of each 4-byte chunk
-# for CRC32: seed=(seed), xor_out=0, poly=0x104C11DB7, reverse=false, reverse order of each 4-byte chunk
-
-crc_f = crcmod.mkCrcFun(crc_poly, rev=False, initCrc=crc_seed, xorOut=xor_out)
 
 ###########################
 # Global helper functions #
@@ -40,6 +33,8 @@ def formatted_time(t):
     y = t
     return f"{y} years {d} days" if y else f"{d} days {h} hours" if d else f"{h} hours {m} minutes" if h else f"{m} minutes {s} seconds" if m else f"{s} seconds"
 
+# to silence warnings:
+progBarStartTime = 0
 # Totally unnecessary progress meter ripped from the bowels of the internet
 # Print iterations progress
 def printProgressBar(iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█', printEnd = "\r"):
@@ -75,257 +70,119 @@ def printProgressBar(iteration, total, prefix = '', suffix = '', decimals = 1, l
 # Communications routines #
 ###########################
 
-def crc_4(arr):
-    crc = crc_seed
-    i = 0
-    while i < len(arr):
-        crc = crc_f(bytearray((arr[i+3], arr[i+2], arr[i+1], arr[i])), crc)
-        i += 4
-    return crc
-
-hdr_start_char = 0x7E
-
-def msg_is_valid(data, exp_id):
-    start_char, length, id = struct.unpack_from("<BHB", data, 0)
-    #print(start_char, length, id)
-    if start_char != 0x7E:
-        print("wrong start char")
-        return False
-    if len(data) < length:
-        print("data length too short")
-        return False
-    if id != exp_id:
-        print("wrong id")
-        return False
-    msg_crc, = struct.unpack_from("<I", data, length-4)
-    crc = crc_4(data[0:length-4])
-    if msg_crc != crc:
-        print("msg crc {} != calc crc {}".format(msg_crc, crc))
-        return False
-    return True
-
-def make_cmd(cmd_len, id):
-    data = bytearray(cmd_len)
-    struct.pack_into("<BHB", data, 0, hdr_start_char, cmd_len, id)
-    return data
-
-def insert_crc(data):
-    crc = crc_4(data[0:len(data)-4])
-    struct.pack_into("<I", data, len(data)-4, crc)
-
-def read_rsp(port, rsp_len, rsp_id):
-    rsp_data = port.read(rsp_len)
-    if len(rsp_data) >= rsp_len:
-        if msg_is_valid(rsp_data, rsp_id):
-            return rsp_data
-        else:
-            print("! Invalid response {}".format(rsp_data))
-            return bytearray()
-    else:
-        print("! Error: Serial timeout")
-        return bytearray()
-
 def handle_none(_port, _args):
     return True
 
 def handle_ping(port, args):
-    cmd_len = 8
-    rsp_len = 32
-    cmd_data = make_cmd(cmd_len, 2)
-
-    insert_crc(cmd_data)
-
-    port.write(cmd_data)
-    rsp_data = read_rsp(port, rsp_len, 3)
-    if len(rsp_data) >= rsp_len:
-        uptime, version_bin, is_busy = struct.unpack_from("<I16sI", rsp_data, 4)
-        version = version_bin.decode()
-    else:
-        return False
-    return [uptime, version, is_busy]
+    uptime, version, is_busy = readout.ping(port)
+    return uptime, version, is_busy
 
 def handle_vt_get_bit_count_kpage(port, base_address,read_mv):
+    print("TODO(aidan): make this work")
 
-    cmd_len = 16
-    rsp_len = 1032
-    cmd_data = make_cmd(cmd_len, 6)
-    struct.pack_into("<II", cmd_data, 4, base_address, read_mv)
-    insert_crc(cmd_data)
+    # cmd_len = 16
+    # rsp_len = 1032
+    # cmd_data = make_cmd(cmd_len, 6)
+    # struct.pack_into("<II", cmd_data, 4, base_address, read_mv)
+    # insert_crc(cmd_data)
 
-    port.write(cmd_data)
-    rsp_data = read_rsp(port, rsp_len, 7)
+    # port.write(cmd_data)
+    # rsp_data = read_rsp(port, rsp_len, 7)
 
 
-    if len(rsp_data) >= rsp_len:
-        array = np.frombuffer(rsp_data[4:-4], dtype=np.uint8)  # or dtype=np.dtype('<f4')
-        bitarray = np.unpackbits(array)#np.unpackbits(array.view(np.uint8))
+    # if len(rsp_data) >= rsp_len:
+    #     array = np.frombuffer(rsp_data[4:-4], dtype=np.uint8)  # or dtype=np.dtype('<f4')
+    #     bitarray = np.unpackbits(array)#np.unpackbits(array.view(np.uint8))
 
-        NDarray = np.reshape(bitarray, (1024, 8))   #np.reshape(bitarray, (512, 16)) #if we are reading 16 bit words
+    #     NDarray = np.reshape(bitarray, (1024, 8))   #np.reshape(bitarray, (512, 16)) #if we are reading 16 bit words
 
-    else:
-        return False
-    return NDarray
+    # else:
+    #     return False
+    #return NDarray
+    return False
 
 def handle_erase_chip(port):
-    cmd_len = 8
-    rsp_len = 8
-    cmd_data = make_cmd(cmd_len, 8)
-    insert_crc(cmd_data)
-
-    port.write(cmd_data)
-    rsp_data = read_rsp(port, rsp_len, 9)
-    if len(rsp_data) >= rsp_len:
-        print("  Erase Chip")
-    else:
-        return False
+    readout.erase_chip(port)
+    print("  Erase Chip")
     return True
 
-def handle_erase_sector(port,sector_address):
-    cmd_len = 12
-    rsp_len = 8
-    cmd_data = make_cmd(cmd_len, 10)
-    struct.pack_into("<I", cmd_data, 4, sector_address)
-    insert_crc(cmd_data)
-
-    port.write(cmd_data)
-    rsp_data = read_rsp(port, rsp_len, 11)
-    if len(rsp_data) >= rsp_len:
-        print("  Erase Sector {:08X} complete".format(sector_address))
-    else:
-        return False
+def handle_erase_sector(port, sector_address):
+    readout.erase_sector(port, sector_address)
+    print("  Erase Sector {:08X} complete".format(sector_address))
     return True
 
-def handle_program_sector(port, sector_address,prog_value):
+def handle_program_sector(port, sector_address, prog_value):
     t = time.time()
-    cmd_len = 16
-    rsp_len = 8
-    cmd_data = make_cmd(cmd_len, 12)
-    struct.pack_into("<IHH", cmd_data, 4, sector_address, prog_value, 0)
-    insert_crc(cmd_data)
-
-    port.write(cmd_data)
-    rsp_data = read_rsp(port, rsp_len, 13)
-    if len(rsp_data) >= rsp_len:
-        print("Program Sector {:08X} with word {:04X}".format(sector_address, prog_value))
-    else:
-        return False
+    readout.program_sector(port, sector_address, prog_value)
+    print("Program Sector {:08X} with word {:04X}".format(sector_address, prog_value))
     print("time to program sector: {:.2f} s".format(time.time() - t))
     return True
 
 def handle_program_chip(port, prog_value):
-    cmd_len = 12
-    rsp_len = 8
-    cmd_data = make_cmd(cmd_len, 14)
-    struct.pack_into("<HH", cmd_data, 4, prog_value, 0)
-    insert_crc(cmd_data)
-
-    port.write(cmd_data)
-    rsp_data = read_rsp(port, rsp_len, 15)
-    if len(rsp_data) >= rsp_len:
-        print("  Program Chip with word {:04X}".format(prog_value))
-    else:
-        return False
+    readout.program_chip(port, prog_value)
+    print("  Program Chip with word {:04X}".format(prog_value))
     return True
 
-def handle_get_sector_bit_count(port, sector_address,read_mv):
-    cmd_len = 16
-    rsp_len = 12
-    cmd_data = make_cmd(cmd_len, 16)
-    struct.pack_into("<II", cmd_data, 4, sector_address, read_mv)
-    insert_crc(cmd_data)
-
-    port.write(cmd_data)
-    rsp_data = read_rsp(port, rsp_len, 17)
-    if len(rsp_data) >= rsp_len:
-        bits_set, = struct.unpack_from("<I", rsp_data, 4)
-    else:
-        return False
+def handle_get_sector_bit_count(port, sector_address, read_mv):
+    bits_set = readout.get_sector_bit_count(port, sector_address, read_mv)
     return bits_set
 
-def handle_read_data(port, address,read_mv,vt,bit_mode, max_repeats=3, current_iter=1):
-    vt_mode = 1 if vt is not None else 0
+def handle_read_data(port, address, read_mv, vt, bit_mode):
+    vt_mode = True if vt is not None else False
     read_mv = read_mv if vt_mode else 0
 
-    cmd_len = 20
-    rsp_len = 1032
+    # Original adapted for read_data call.
+    # I don't know what this is doing or why.
+    # Removed repeat loop. Callers should catch exceptions
 
-    cmd_data = make_cmd(cmd_len, 18)
-    struct.pack_into("<III", cmd_data, 4, address, vt_mode, read_mv)
-    insert_crc(cmd_data)
+    data = readout.read_data(port, address, vt_mode, read_mv)
 
-    port.write(cmd_data)
-    rsp_id = 19
-    rsp_data = read_rsp(port, rsp_len, rsp_id)
-
-
-    if len(rsp_data) >= rsp_len:
-        array = np.frombuffer(rsp_data[4:-4], dtype=np.uint16)  # or dtype=np.dtype('<f4')
-        bitarray = np.unpackbits(array.view(np.uint8))
-        NDarray = np.reshape(bitarray, (512, 16))
-        if(current_iter > 1):
-            print(f"Read successful on attempt {current_iter}")
-         #if we are reading 16 bit words
-        # for line in range(32):
-        #      print("  {:08X}    {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X}".format(base_address + 16*line,
-        #                                                                                                                                                 rsp_data[4+16*line + 0], rsp_data[4+16*line + 1], rsp_data[4+16*line + 2], rsp_data[4+16*line + 3],
-        #                                                                                                                                                 rsp_data[4+16*line + 4], rsp_data[4+16*line + 5], rsp_data[4+16*line + 6], rsp_data[4+16*line + 7],
-        #                                                                                                                                                 rsp_data[4+16*line + 8], rsp_data[4+16*line + 8], rsp_data[4+16*line + 8], rsp_data[4+16*line + 9],
-        #                                                                                                                                                 rsp_data[4+16*line + 12], rsp_data[4+16*line + 13], rsp_data[4+16*line + 14], rsp_data[4+16*line + 15]))
-        # #print(read_mv,sum(bitarray))
-    else:
-        # repeat call
-        if current_iter > max_repeats:
-            print(f"Unable to read after {max_repeats} attempts. Skipping.") 
-            return 0 if bit_mode else np.full((512, 16),2,dtype=np.uint8)
-        else:
-            print(f"Repeating call to read data at address {address}. Attempt #{current_iter} failed.")
-            return handle_read_data(port, address,read_mv,vt,bit_mode, max_repeats=max_repeats, current_iter=current_iter+1)
+    array = np.frombuffer(data, dtype=np.uint16)  # or dtype=np.dtype('<f4')
+    bitarray = np.unpackbits(array.view(np.uint8))
     if bit_mode:
         return sum(bitarray)
     else:
+        NDarray = np.reshape(bitarray, (512, 16))
         return NDarray
 
-def handle_write_data(port, args):
-    print("! Operation not supported")
-    return False
+    # Original for posterity
 
-def handle_ana_get_cal_counts(port, args):
-    cmd_len = 8
-    rsp_len = 16
-    cmd_data = make_cmd(cmd_len, 80)
-    insert_crc(cmd_data)
-    port.write(cmd_data)
+    # if len(rsp_data) >= rsp_len:
+    #     array = np.frombuffer(rsp_data[4:-4], dtype=np.uint16)  # or dtype=np.dtype('<f4')
+    #     bitarray = np.unpackbits(array.view(np.uint8))
+    #     NDarray = np.reshape(bitarray, (512, 16))
+    #     if(current_iter > 1):
+    #         print(f"Read successful on attempt {current_iter}")
+    #      #if we are reading 16 bit words
+    #     # for line in range(32):
+    #     #      print("  {:08X}    {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X}".format(base_address + 16*line,
+    #     #                                                                                                                                                 rsp_data[4+16*line + 0], rsp_data[4+16*line + 1], rsp_data[4+16*line + 2], rsp_data[4+16*line + 3],
+    #     #                                                                                                                                                 rsp_data[4+16*line + 4], rsp_data[4+16*line + 5], rsp_data[4+16*line + 6], rsp_data[4+16*line + 7],
+    #     #                                                                                                                                                 rsp_data[4+16*line + 8], rsp_data[4+16*line + 8], rsp_data[4+16*line + 8], rsp_data[4+16*line + 9],
+    #     #                                                                                                                                                 rsp_data[4+16*line + 12], rsp_data[4+16*line + 13], rsp_data[4+16*line + 14], rsp_data[4+16*line + 15]))
+    #     # #print(read_mv,sum(bitarray))
+    # else:
+    #     # repeat call
+    #     if current_iter > max_repeats:
+    #         print(f"Unable to read after {max_repeats} attempts. Skipping.") 
+    #         return 0 if bit_mode else np.full((512, 16),2,dtype=np.uint8)
+    #     else:
+    #         print(f"Repeating call to read data at address {address}. Attempt #{current_iter} failed.")
+    #         return handle_read_data(port, address,read_mv,vt,bit_mode, max_repeats=max_repeats, current_iter=current_iter+1)
+    # if bit_mode:
+    #     return sum(bitarray)
+    # else:
+    #     return NDarray
 
-    rsp_data = read_rsp(port, rsp_len, 81)
-    print(port.in_waiting)
-    print(rsp_data,rsp_data[4:-4].decode('ascii'),len(rsp_data[4:-4]),len(rsp_data.decode('utf-16')))
-    if len(rsp_data) >= rsp_len:
-        ce_10v_cts, reset_10v_cts, wp_acc_10v_cts, spare_10v_cts = struct.unpack_from(
-            "<HHHH", rsp_data, 4)
-        print("  CE 10V Counts:       {}\r\n  Reset 10V Counts:    {}\r\n  WP/Acc 10V Counts:   {}\r\n  Spare 10V Counts:    {}".format(
-            ce_10v_cts, reset_10v_cts, wp_acc_10v_cts, spare_10v_cts))
-    else:
-        return False
-    return True
+def handle_ana_get_cal_counts(port):
+    ce_10v_cts, reset_10v_cts, wp_acc_10v_cts, spare_10v_cts = readout.ana_get_cal_counts(port)
 
-def handle_ana_set_cal_counts(port, args):
-    ce_10v_cts = args.ce_cal_cts[0]
-    reset_10v_cts = args.reset_cal_cts[0]
-    wp_acc_10v_cts = args.wp_acc_cal_cts[0]
-    spare_10v_cts = args.spare_cal_cts[0]
-    cmd_len = 16
-    rsp_len = 8
-    cmd_data = make_cmd(cmd_len, 82)
-    struct.pack_into("<HHHH", cmd_data, 4, ce_10v_cts, reset_10v_cts, wp_acc_10v_cts, spare_10v_cts)
-    insert_crc(cmd_data)
+    print("  CE 10V Counts:       {}\r\n  Reset 10V Counts:    {}\r\n  WP/Acc 10V Counts:   {}\r\n  Spare 10V Counts:    {}".format(
+          ce_10v_cts, reset_10v_cts, wp_acc_10v_cts, spare_10v_cts))
 
-    port.write(cmd_data)
-    rsp_data=read_rsp(port, rsp_len, 83)
-    if len(rsp_data) >= rsp_len:
-        print("  Set cal counts")
-    else:
-        return False
-    return True
+def handle_ana_set_cal_counts(port, ce_10v_cts: int, reset_10v_cts: int, wp_acc_10v_cts: int, spare_10v_cts: int):
+    readout.ana_set_cal_counts(port, ce_10v_cts, reset_10v_cts, wp_acc_10v_cts, spare_10v_cts)
+    print("  Set cal counts")
 
 analog_unit_map = {
     "ce" : 0,
@@ -334,22 +191,13 @@ analog_unit_map = {
     "spare" : 3
 }
 
-def handle_ana_set_active_counts(port, args):
-    unit = analog_unit_map.get(args.analog_unit[0])
-    unit_counts = args.counts[0]
-    cmd_len = 16
-    rsp_len = 8
-    cmd_data = make_cmd(cmd_len, 84)
-    struct.pack_into("<II", cmd_data, 4, unit, unit_counts)
-    insert_crc(cmd_data)
-
-    port.write(cmd_data)
-    rsp_data = read_rsp(port, rsp_len, 85)
-    if len(rsp_data) >= rsp_len:
-        print("  Set {} counts to {}".format(args.analog_unit[0], unit_counts))
+def handle_ana_set_active_counts(port, unit: str, counts: int):
+    if unit in analog_unit_map:
+        unit_num = analog_unit_map[unit]
+        readout.ana_set_active_counts(port, unit_num, counts)
+        print("  Set {} ({}) counts to {}".format(unit, unit_num, counts))
     else:
-        return False
-    return True
+        print(f"  Unknown unit {unit}")
 
 #####################
 # Analysis routines #
@@ -386,7 +234,7 @@ def read_chip_voltages(port,voltages,sectors,location='.'):
                 count+=1
             np.savetxt(os.path.join(location,"data-{}-{}.csv".format(j,base_address)), saved_array, fmt='%d', delimiter='')
 
-	print()
+    print()
     return
 
 ## No longer used
@@ -411,7 +259,7 @@ def get_voltage_sweep(port,base_address,voltages,method):
         bits = []
         v = voltages
         printProgressBar(0, len(voltages), prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
-        for idx1, j in enumerate(voltages):
+        for idx, j in enumerate(voltages):
             bit_count = handle_get_sector_bit_count(port,base_address,read_mv=j)
             bits.append(bit_count)
             time.sleep(.003)
@@ -462,7 +310,8 @@ def get_bit_noise(port, sector_address, voltages,iterations):
                 # print(xgrad.shape,X.shape,Y.shape)
                 # ha.plot_surface(X.T, Y.T, xgrad)
                 # plt.show()
-            sg.one_line_progress_meter('Getting Noise Data', bar + 1, len(voltages)*iterations)
+            # TODO(aidan): below line does not work. Replce "sg" progress meter with actual progress meter
+            #sg.one_line_progress_meter('Getting Noise Data', bar + 1, len(voltages)*iterations)
             bar+=1
         results_matrix.append(data_matrix)
     true_values = []
@@ -538,6 +387,7 @@ if args.sectors and not (args.read or args.write):
     parser.error('--sectors may only be used in conjunction with --read or --write')
 
 # Check if a port is valid and assign serial object if possible
+ser = None
 if(args.port):
     print("Checking status of port " + args.port)
     try:
