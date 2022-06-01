@@ -13,8 +13,8 @@ xor_out = 0
 
 crc_f = crcmod.mkCrcFun(crc_poly, rev=False, initCrc=crc_seed, xorOut=xor_out)
 
-def crc_4(arr):
-    crc = crc_seed
+def crc_4(arr, start=crc_seed):
+    crc = start
     i = 0
     while i < len(arr):
         crc = crc_f(bytearray((arr[i+3], arr[i+2], arr[i+1], arr[i])), crc)
@@ -35,7 +35,7 @@ class SerialTimeoutError(Exception):
 
 hdr_start_char = 0x7E
 
-msg_ids = {
+msg_names = {
     0 : "null",
     2 : "cmd_ping",
     3 : "rsp_ping",
@@ -66,6 +66,8 @@ msg_ids = {
     85 : "rsp_ana_set_active_counts"
 }
 
+msg_ids = { msg_names[msg_id]: msg_id for msg_id in msg_names }
+
 
 def validate_msg(header: bytearray, data: bytearray, exp_id: int) -> bool:
     start_char, length, id = struct.unpack_from("<BHB", header, 0)
@@ -75,14 +77,14 @@ def validate_msg(header: bytearray, data: bytearray, exp_id: int) -> bool:
     if len(data) < (length-4):
         raise MessageValidationError("Data length too short ({} < {})".format(len(data), length-4))
     if id != exp_id:
-        raise MessageValidationError("Expected message ID {}. Got Message ID {} ({})".format(exp_id, id, msg_ids[id] if id in msg_ids else "unknown id"))
+        raise MessageValidationError("Expected message ID {}. Got Message ID {} ({})".format(exp_id, id, msg_names[id] if id in msg_names else "unknown message"))
 
     msg_crc, = struct.unpack_from("<I", data, length-4-4)
     crc = crc_4(header)
     crc = crc_4(data[0:length-4-4], crc)
 
     if msg_crc != crc:
-        raise MessageValidationError("msg crc {} != calc crc {}".format(hex(msg_crc), hex(crc)))
+        raise MessageValidationError("Message crc {} != calc crc {} for message {} ({})".format(hex(msg_crc), hex(crc)), id, msg_names[id] if id in msg_names else "unknown message")
     return True
 
 def make_cmd(cmd_len: int, id: int) -> bytearray:
@@ -90,7 +92,7 @@ def make_cmd(cmd_len: int, id: int) -> bytearray:
     struct.pack_into("<BHB", data, 0, hdr_start_char, cmd_len, id)
     return data
 
-def insert_crc(data: bytearray):
+def insert_crc(data: bytearray) -> None:
     crc = crc_4(data[0:len(data)-4])
     struct.pack_into("<I", data, len(data)-4, crc)
 
@@ -104,17 +106,17 @@ def read_rsp(port, rsp_id: int) -> bytes:
     if len(rsp_data) < (msg_len-4):
         raise SerialTimeoutError("Timeout reading message payload from serial port. Expected {} bytes, got {}".format(msg_len-4, len(rsp_data)))
 
-    validate_msg(rsp_header, rsp_data, rsp_id, True)
+    validate_msg(rsp_header, rsp_data, rsp_id)
     return rsp_data
 
 def ping(port) -> tuple[int, str, int]:
     cmd_len = 8
-    rsp_len = 32
-    cmd_data = make_cmd(cmd_len, 2)
+    #rsp_len = 32
+    cmd_data = make_cmd(cmd_len, msg_ids['cmd_ping'])
     insert_crc(cmd_data)
 
     port.write(cmd_data)
-    rsp_data = read_rsp(port, rsp_len, 3)
+    rsp_data = read_rsp(port, msg_ids['rsp_ping'])
     uptime, version_bin, is_busy = struct.unpack_from("<I16sI", rsp_data, 4)
     version = version_bin.decode('utf-8', 'ignore')
 
@@ -122,89 +124,90 @@ def ping(port) -> tuple[int, str, int]:
 
 def vt_get_bit_count_kpage(port, base_address: int, read_mv: int) -> list:
     cmd_len = 16
-    rsp_len = 1032
-    cmd_data = make_cmd(cmd_len, 6)
+    #rsp_len = 1032
+    cmd_data = make_cmd(cmd_len, msg_ids['cmd_vt_get_bit_count_kpage'])
     struct.pack_into("<II", cmd_data, 4, base_address, read_mv)
     insert_crc(cmd_data)
 
     port.write(cmd_data)
-    rsp_data = read_rsp(port, rsp_len, 7)
+    rsp_data = read_rsp(port, msg_ids['rsp_vt_get_bit_count_kpage'])
 
+    # TODO(aidan): Figure out what this is supposed to do
     return [rsp_data[4+i] for i in range(1024)]
 
-def erase_chip(port):
+def erase_chip(port) -> None:
     cmd_len = 8
-    rsp_len = 8
-    cmd_data = make_cmd(cmd_len, 8)
+    #rsp_len = 8
+    cmd_data = make_cmd(cmd_len, msg_ids['cmd_erase_chip'])
     insert_crc(cmd_data)
 
     port.write(cmd_data)
-    rsp_data = read_rsp(port, rsp_len, 9)
+    _ = read_rsp(port, msg_ids['rsp_erase_chip'])
 
-def erase_sector(port, sector_address: int):
+def erase_sector(port, sector_address: int) -> None:
     cmd_len = 12
-    rsp_len = 8
-    cmd_data = make_cmd(cmd_len, 10)
+    #rsp_len = 8
+    cmd_data = make_cmd(cmd_len, msg_ids['cmd_erase_sector'])
     struct.pack_into("<I", cmd_data, 4, sector_address)
     insert_crc(cmd_data)
 
     port.write(cmd_data)
-    rsp_data = read_rsp(port, rsp_len, 11)
+    _ = read_rsp(port, msg_ids['rsp_erase_sector'])
 
-def program_sector(port, sector_address: int, prog_value: int):
+def program_sector(port, sector_address: int, prog_value: int) -> None:
     cmd_len = 16
-    rsp_len = 8
-    cmd_data = make_cmd(cmd_len, 12)
+    #rsp_len = 8
+    cmd_data = make_cmd(cmd_len, msg_ids['cmd_program_sector'])
     struct.pack_into("<IHH", cmd_data, 4, sector_address, prog_value, 0)
     insert_crc(cmd_data)
 
     port.write(cmd_data)
-    rsp_data = read_rsp(port, rsp_len, 13)
+    _ = read_rsp(port, msg_ids['rsp_program_sector'])
 
-def program_chip(port, prog_value: int):
+def program_chip(port, prog_value: int) -> None:
     cmd_len = 12
-    rsp_len = 8
-    cmd_data = make_cmd(cmd_len, 14)
+    #rsp_len = 8
+    cmd_data = make_cmd(cmd_len, msg_ids['cmd_program_chip'])
     struct.pack_into("<HH", cmd_data, 4, prog_value, 0)
     insert_crc(cmd_data)
 
     port.write(cmd_data)
-    rsp_data = read_rsp(port, rsp_len, 15)
+    _ = read_rsp(port, msg_ids['rsp_program_chip'])
 
 def get_sector_bit_count(port, base_address: int, read_mv: int) -> int:
     cmd_len = 16
-    rsp_len = 12
-    cmd_data = make_cmd(cmd_len, 16)
+    #rsp_len = 12
+    cmd_data = make_cmd(cmd_len, msg_ids['cmd_get_sector_bit_count'])
     struct.pack_into("<II", cmd_data, 4, base_address, read_mv)
     insert_crc(cmd_data)
 
     port.write(cmd_data)
-    rsp_data = read_rsp(port, rsp_len, 17)
+    rsp_data = read_rsp(port, msg_ids['rsp_get_sector_bit_count'])
     bits_set, = struct.unpack_from("<I", rsp_data, 4)
 
     return bits_set
 
-def read_data(port, base_address, vt_mode: bool=False, read_mv: int=0) -> bytearray:
+def read_data(port, base_address, vt_mode: bool=False, read_mv: int=4000) -> bytearray:
     cmd_len = 20
-    rsp_len = 1032
-    cmd_data = make_cmd(cmd_len, 18)
+    #rsp_len = 1032
+    cmd_data = make_cmd(cmd_len, msg_ids['cmd_read_data'])
     struct.pack_into("<III", cmd_data, 4, base_address, 1 if vt_mode else 0, read_mv)
     insert_crc(cmd_data)
 
     port.write(cmd_data)
-    rsp_data = read_rsp(port, rsp_len, 19)
+    rsp_data = read_rsp(port, msg_ids['rsp_read_data'])
 
     # data = []
     # for i in range(0, 1024, 2):
     #     word, = struct.unpack_from("<H", rsp_data, 4 + 2*i)
     #     data.append(word)
 
-    return rsp_data[4:-4]
+    return bytearray(rsp_data[4:-4])
 
-def write_data(port, base_address: int, words):
+def write_data(port, base_address: int, words: list | bytes | bytearray) -> None:
     cmd_len = 1040
-    rsp_len = 8
-    cmd_data = make_cmd(cmd_len, 20)
+    #rsp_len = 8
+    cmd_data = make_cmd(cmd_len, msg_ids['cmd_write_data'])
 
     for i in range(len(words)):
         struct.pack_into("<H", cmd_data, 4, words[i])
@@ -212,29 +215,29 @@ def write_data(port, base_address: int, words):
     insert_crc(cmd_data)
 
     port.write(cmd_data)
-    rsp_data = read_rsp(port, rsp_len, 21)
+    _ = read_rsp(port, msg_ids['rsp_write_data'])
 
 def ana_get_cal_counts(port) -> tuple[int, int, int, int]:
     cmd_len = 8
-    rsp_len = 16
-    cmd_data = make_cmd(cmd_len, 80)
+    #rsp_len = 16
+    cmd_data = make_cmd(cmd_len, msg_ids['cmd_ana_get_cal_counts'])
     insert_crc(cmd_data)
 
     port.write(cmd_data)
-    rsp_data = read_rsp(port, rsp_len, 81)
+    rsp_data = read_rsp(port, msg_ids['rsp_ana_get_cal_counts'])
     ce_10v_cts, reset_10v_cts, wp_acc_10v_cts, spare_10v_cts = struct.unpack_from("<HHHH", rsp_data, 4)
 
     return ce_10v_cts, reset_10v_cts, wp_acc_10v_cts, spare_10v_cts
 
-def ana_set_cal_counts(port, ce_10v_cts: int, reset_10v_cts: int, wp_acc_10v_cts: int, spare_10v_cts: int):
+def ana_set_cal_counts(port, ce_10v_cts: int, reset_10v_cts: int, wp_acc_10v_cts: int, spare_10v_cts: int) -> None:
     cmd_len = 16
-    rsp_len = 8
-    cmd_data = make_cmd(cmd_len, 82)
+    #rsp_len = 8
+    cmd_data = make_cmd(cmd_len, msg_ids['cmd_ana_set_cal_counts'])
     struct.pack_into("<HHHH", cmd_data, 4, ce_10v_cts, reset_10v_cts, wp_acc_10v_cts, spare_10v_cts)
     insert_crc(cmd_data)
 
     port.write(cmd_data)
-    rsp_data=read_rsp(port, rsp_len, 83)
+    _ = read_rsp(port, msg_ids['rsp_ana_set_cal_counts'])
 
 analog_unit_map = {
     "ce" : 0,
@@ -243,17 +246,17 @@ analog_unit_map = {
     "spare" : 3
 }
 
-def ana_set_active_counts(port, unit: int, unit_counts: int):
+def ana_set_active_counts(port, unit: int, unit_counts: int) -> None:
     # Analog units
     # CE#      0
     # RESET#   1
     # WP/ACC#  2
     # SPARE    3
     cmd_len = 16
-    rsp_len = 8
-    cmd_data = make_cmd(cmd_len, 84)
+    #rsp_len = 8
+    cmd_data = make_cmd(cmd_len, msg_ids['cmd_ana_set_active_counts'])
     struct.pack_into("<II", cmd_data, 4, unit, unit_counts)
     insert_crc(cmd_data)
 
     port.write(cmd_data)
-    rsp_data = read_rsp(port, rsp_len, 85)
+    _ = read_rsp(port, msg_ids['rsp_ana_set_active_counts'])
