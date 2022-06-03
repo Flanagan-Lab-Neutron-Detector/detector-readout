@@ -117,7 +117,7 @@ def ping(port) -> tuple[int, str, int]:
 
     port.write(cmd_data)
     rsp_data = read_rsp(port, msg_ids['rsp_ping'])
-    uptime, version_bin, is_busy = struct.unpack_from("<I16sI", rsp_data, 4)
+    uptime, version_bin, is_busy = struct.unpack_from("<I16sI", rsp_data, 0)
     version = version_bin.decode('utf-8', 'ignore')
 
     return uptime, version, is_busy
@@ -183,7 +183,7 @@ def get_sector_bit_count(port, base_address: int, read_mv: int) -> int:
 
     port.write(cmd_data)
     rsp_data = read_rsp(port, msg_ids['rsp_get_sector_bit_count'])
-    bits_set, = struct.unpack_from("<I", rsp_data, 4)
+    bits_set, = struct.unpack_from("<I", rsp_data, 0)
 
     return bits_set
 
@@ -202,9 +202,9 @@ def read_data(port, base_address, vt_mode: bool=False, read_mv: int=4000) -> byt
     #     word, = struct.unpack_from("<H", rsp_data, 4 + 2*i)
     #     data.append(word)
 
-    return bytearray(rsp_data[4:-4])
+    return bytearray(rsp_data[0:-4])
 
-def write_data(port, base_address: int, words: list | bytes | bytearray) -> None:
+def write_data(port, base_address: int, words: list) -> None:
     cmd_len = 1040
     #rsp_len = 8
     cmd_data = make_cmd(cmd_len, msg_ids['cmd_write_data'])
@@ -225,7 +225,7 @@ def ana_get_cal_counts(port) -> tuple[int, int, int, int]:
 
     port.write(cmd_data)
     rsp_data = read_rsp(port, msg_ids['rsp_ana_get_cal_counts'])
-    ce_10v_cts, reset_10v_cts, wp_acc_10v_cts, spare_10v_cts = struct.unpack_from("<HHHH", rsp_data, 4)
+    ce_10v_cts, reset_10v_cts, wp_acc_10v_cts, spare_10v_cts = struct.unpack_from("<HHHH", rsp_data, 0)
 
     return ce_10v_cts, reset_10v_cts, wp_acc_10v_cts, spare_10v_cts
 
