@@ -73,10 +73,6 @@ def printProgressBar(iteration, total, prefix = '', suffix = '', decimals = 1, l
 def handle_none(_port, _args):
     return True
 
-def handle_ping(port, args):
-    uptime, version, is_busy = readout.ping(port)
-    return uptime, version, is_busy
-
 def handle_vt_get_bit_count_kpage(port, base_address,read_mv):
     print("TODO(aidan): make this work")
 
@@ -136,7 +132,7 @@ def handle_read_data(port, address, read_mv, vt, bit_mode):
     # Removed repeat loop. Callers should catch exceptions
 
     data = readout.read_data(port, address, vt_mode, read_mv)
-
+    
     array = np.frombuffer(data, dtype=np.uint16)  # or dtype=np.dtype('<f4')
     bitarray = np.unpackbits(array.view(np.uint8))
     if bit_mode:
@@ -396,16 +392,16 @@ if(args.port):
         print(e)
         parser.error("It appears there was a problem with your USB port")
 
-    resp = handle_ping(ser, args='')
-        
-    if not isinstance(resp,bool):
-        print(f"USB {resp[1]}")
-        print(f"USB status idle={bool(resp[2])}")
-    else:
-        print("USB ping failed")
+    uptime, version, is_busy = readout.ping(ser)
+    
+    print("  Ping")
+    print(f"    Firmware {version}")
+    print(f"    Uptime   {uptime}s")
+    print(f"    idle     {bool(is_busy)}")
 
     # Wait just a bit before the next call
     time.sleep(.01)
+
 # List ports    
 if(args.list_ports):
     ports = serial.tools.list_ports.comports()
@@ -421,7 +417,7 @@ elif(args.read):
         os.mkdir(args.directory)
     directory = args.directory if args.directory else '.'
 
-    if(args.sector):
+    if(args.sector is not None):
         read_chip_voltages(ser, range(args.start, args.stop, args.step), [args.sector], location=directory)
     elif(args.sectors):
         read_chip_voltages(ser, range(args.start, args.stop, args.step), args.sectors, location=directory)
@@ -444,5 +440,10 @@ elif(args.write):
         for sector in args.sectors:
             handle_program_sector(ser, args.sector, args.value)
     elif(args.all_sectors):
-        handle_program_chip(ser, args.value)
-        print("Writing a chip takes about 30 minutes and will continue despite the serial error that causes this macro to abort. Please wait until the chip stops flashing.")
+        try:
+            handle_program_chip(ser, args.value)
+        except readout.SerialTimeoutError as te:
+            print("Writing a chip takes about 30 minutes and will continue despite the serial error that causes this macro to abort. Please wait until the chip stops flashing.")
+            print(te)
+        except Exception as e:
+            print(f"Got unexpected exception when programming chip: {e}")
