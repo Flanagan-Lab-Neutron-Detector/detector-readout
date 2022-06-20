@@ -6,14 +6,12 @@ import serial.tools.list_ports
 import matplotlib.pyplot as plt
 import numpy as np
 import time
-import scipy
 import os
 
 import nisoc_readout as readout
 
 from argparse import ArgumentParser
 from functools import partial
-from datetime import timedelta
 
 ###########################
 # Global helper functions #
@@ -123,6 +121,17 @@ def handle_get_sector_bit_count(port, sector_address, read_mv):
     bits_set = readout.get_sector_bit_count(port, sector_address, read_mv)
     return bits_set
 
+def new_handle_read_data(port, address, read_mv, vt, bit_mode):
+    vt_mode = True if vt is not None else False
+    read_mv = read_mv if vt_mode else 0
+
+    # Original adapted for read_data call.
+    # I don't know what this is doing or why.
+    # Removed repeat loop. Callers should catch exceptions
+
+    data = readout.read_data(port, address, vt_mode, read_mv)
+    return data
+
 def handle_read_data(port, address, read_mv, vt, bit_mode):
     vt_mode = True if vt is not None else False
     read_mv = read_mv if vt_mode else 0
@@ -132,7 +141,7 @@ def handle_read_data(port, address, read_mv, vt, bit_mode):
     # Removed repeat loop. Callers should catch exceptions
 
     data = readout.read_data(port, address, vt_mode, read_mv)
-    
+
     array = np.frombuffer(data, dtype=np.uint16)  # or dtype=np.dtype('<f4')
     bitarray = np.unpackbits(array.view(np.uint8))
     if bit_mode:
@@ -204,13 +213,46 @@ def hex_int(x):
     return int(x, 16)
 
 
-def get_dac_code(mv):
-    gain = 10/1627*4095/3.3
-    return int(mv/gain*4095/3.3)
+def rev_b_get_dac_code(mv):
+    # Dac is 12-bit 0V-3.3V with an amplifier with G = 7.667
+    # dac output = code * 3.3/4095
+    # amp output = dac * 7.667
+    # mv = G * (code/4095) * 3.3V   =>   code = 4095 * mv/(G*3.3V)
+    return 4095 * int(mv/(7.667*3.3))
+    #gain = 10/1627*4095/3.3
+    #return int(mv/gain*4095/3.3)
 
-def get_mv(dac_code):
-    gain = 10/1627*4095/3.3
-    return float(gain*3.3/4095*dac_code)
+def rev_b_get_mv(dac_code):
+    # Dac is 12-bit 0V-3.3V with an amplifier with G = 7.667
+    # dac output = code * 3.3/4095
+    # amp output = dac * 7.667
+    return 7.667 * float(dac_code/4095) * 3.3
+    #gain = 10/1627*4095/3.3
+    #return float(gain*3.3/4095*dac_code)
+
+# One sectors is 64kword of data = 128kB
+# So we need voltages * len(sectors) * 128k of storage
+
+def new_read_chip_voltages(port, voltages, sectors, location='.'):
+    count = 0
+    printProgressBar(0, len(voltages)*128*len(sectors), prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
+    for _, base_address in enumerate(sectors):
+        for _, j in enumerate(voltages):
+            #mem = [bytearray() for _ in range(128)]
+            #for idx, address in enumerate(range(base_address, base_address + 65024 + 512, 512)):
+            #    mem[idx] = handle_read_data(port, address, j, 1, 0)
+            mem: list[bytearray] = []
+            for _,address in enumerate(range(base_address, base_address + 65024 + 512, 512)):
+                mem.append(new_handle_read_data(port, address, j, 1, 0))
+                time.sleep(0.003)
+                printProgressBar(count, len(voltages)*128*len(sectors), prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
+                count+=1
+            #mem = [new_handle_read_data(port, address, j, 1, 0)
+            #       for _,address in enumerate(range(base_address, base_address + 65024 + 512, 512))]
+            with open(os.path.join(location,"data-{}-{}.dat".format(j,base_address)), 'wb') as f:
+                for block in mem:
+                    f.write(block)
+    print()
 
 def read_chip_voltages(port,voltages,sectors,location='.'):
     count = 0
@@ -233,53 +275,53 @@ def read_chip_voltages(port,voltages,sectors,location='.'):
     print()
     return
 
-## No longer used
-def get_voltage_sweep(port,base_address,voltages,method):
-    if not method:
-        values = []
-        tracker = 0
-        printProgressBar(0, len(voltages)*128, prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
-        for idx1,j in enumerate(voltages):
-            temp = []
-            for idx, address in enumerate(range(base_address, base_address + 65024 + 512, 512)):
-                NDarray = handle_read_data(port, address, j,1,1)
-                if not isinstance(NDarray,bool):
-                    temp.append(NDarray)
-                printProgressBar(tracker+1, len(voltages)*128, prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
-                tracker+=1
-            values.append([j, sum(temp)])
+# ## No longer used
+# def get_voltage_sweep(port,base_address,voltages,method):
+#     if not method:
+#         values = []
+#         tracker = 0
+#         printProgressBar(0, len(voltages)*128, prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
+#         for idx1,j in enumerate(voltages):
+#             temp = []
+#             for idx, address in enumerate(range(base_address, base_address + 65024 + 512, 512)):
+#                 NDarray = handle_read_data(port, address, j,1,1)
+#                 if not isinstance(NDarray,bool):
+#                     temp.append(NDarray)
+#                 printProgressBar(tracker+1, len(voltages)*128, prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
+#                 tracker+=1
+#             values.append([j, sum(temp)])
 
-        v = [x[0] for x in values]
-        bits = [x[1] for x in values]
-    else:
-        bits = []
-        v = voltages
-        printProgressBar(0, len(voltages), prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
-        for idx, j in enumerate(voltages):
-            bit_count = handle_get_sector_bit_count(port,base_address,read_mv=j)
-            bits.append(bit_count)
-            time.sleep(.003)
-            printProgressBar(idx, len(voltages), prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
-    if plt.fignum_exists(1):
-        ax1 = plt.figure(1).axes[0]
-        ax2 = plt.figure(1).axes[1]
-    else:
-        fig1 = plt.figure(1)
-        ax1 = fig1.gca()
-        ax1.set_xlabel('Voltage (mV)')
-        ax1.set_ylabel('Counts')
-        ax2 = ax1.twinx()
-        ax2.set_ylabel('Sector Dist.')
-    #print("v: ")
-    #print(v)
-    #print("bits: ")
-    #print(bits)
-    ax1.plot(v, bits, label='Sector: {}'.format(base_address))
-    ax2.plot(v[1:], np.diff(bits), '--', label='Sector Dist.: {}, {}'.format(base_address, voltages[2] - voltages[1]))
-    ax2.legend(loc='best')
-    ax1.legend(loc='best')
-    plt.show()
-    return
+#         v = [x[0] for x in values]
+#         bits = [x[1] for x in values]
+#     else:
+#         bits = []
+#         v = voltages
+#         printProgressBar(0, len(voltages), prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
+#         for idx, j in enumerate(voltages):
+#             bit_count = handle_get_sector_bit_count(port,base_address,read_mv=j)
+#             bits.append(bit_count)
+#             time.sleep(.003)
+#             printProgressBar(idx, len(voltages), prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
+#     if plt.fignum_exists(1):
+#         ax1 = plt.figure(1).axes[0]
+#         ax2 = plt.figure(1).axes[1]
+#     else:
+#         fig1 = plt.figure(1)
+#         ax1 = fig1.gca()
+#         ax1.set_xlabel('Voltage (mV)')
+#         ax1.set_ylabel('Counts')
+#         ax2 = ax1.twinx()
+#         ax2.set_ylabel('Sector Dist.')
+#     #print("v: ")
+#     #print(v)
+#     #print("bits: ")
+#     #print(bits)
+#     ax1.plot(v, bits, label='Sector: {}'.format(base_address))
+#     ax2.plot(v[1:], np.diff(bits), '--', label='Sector Dist.: {}, {}'.format(base_address, voltages[2] - voltages[1]))
+#     ax2.legend(loc='best')
+#     ax1.legend(loc='best')
+#     plt.show()
+#     return
 
 def get_bit_noise(port, sector_address, voltages,iterations):
     max = iterations
@@ -353,6 +395,8 @@ parser.add_argument('-e', "--erase", action='store_true', help='erase data from 
 parser.add_argument('-w', '--write', action='store_true', help='write data to the chip')
 parser.add_argument('-v', '--value', type=partial(int, base=0), help='the hex value to store in each byte')
 
+parser.add_argument('-t', '--test', action='store_true', help='bypass real serial port')
+
 args = parser.parse_args()
 
 
@@ -360,7 +404,7 @@ args = parser.parse_args()
 if (args.sector and args.all_sectors) or (args.sector and args.sectors) or (args.sectors and args.all_sectors):
     parser.error("--sector, --sectors, and --all-sectors are incompatible")
 
-if (args.read or args.write or args.erase) and not args.port:
+if (args.read or args.write or args.erase) and not (args.port or args.test):
     parser.error("--read, --write, and --erase always require --port \n"
                  "use --list-ports to see a list of available usb ports")
     
@@ -384,7 +428,9 @@ if args.sectors and not (args.read or args.write):
 
 # Check if a port is valid and assign serial object if possible
 ser = None
-if(args.port):
+if(args.test):
+    pass
+elif(args.port):
     print("Checking status of port " + args.port)
     try:
         ser = serial.Serial(args.port, 115200, bytesize = serial.EIGHTBITS,stopbits =serial.STOPBITS_ONE, parity  = serial.PARITY_NONE,timeout=1)

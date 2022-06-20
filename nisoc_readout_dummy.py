@@ -1,3 +1,13 @@
+# Exceptions
+
+class MessageValidationError(Exception):
+    """Raised when there is an error validating a message"""
+    pass
+
+class SerialTimeoutError(Exception):
+    """Raised on timeout when reading serial port"""
+    pass
+
 msg_names = {
     0 : "null",
     2 : "cmd_ping",
@@ -30,10 +40,6 @@ msg_names = {
 }
 
 msg_ids = { msg_names[msg_id]: msg_id for msg_id in msg_names }
-
-class MessageValidationError(Exception):
-    """Raised when there is an error validating a message"""
-    pass
 
 def ping(port) -> tuple[int, str, int]:
     return 1234, "test", 0
