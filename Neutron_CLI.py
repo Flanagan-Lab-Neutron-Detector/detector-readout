@@ -262,10 +262,16 @@ def read_chip_voltages(port,voltages,sectors,location='.'):
             saved_array = np.zeros((512,16))
             for idx, address in enumerate(range(base_address, base_address + 65024 + 512, 512)):
 	            NDarray = None
-				try:
-					NDarray = handle_read_data(port, address, j, 1, 0)
-				except Exception as e:
-					print(f"Exception in read_chip_voltages at {address} @ {j} mV: {e}")
+
+	            retries = 3
+				while retries > 0:
+					try:
+						NDarray = handle_read_data(port, address, j, 1, 0)
+						break
+					except Exception as e:
+						print(f"Exception in read_chip_voltages at {address} @ {j} mV: {e}")
+				if retries == 0:
+					print("Retries exceeded. Exiting")
 					exit(1)
 
                 if idx == 0:
