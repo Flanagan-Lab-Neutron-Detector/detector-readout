@@ -117,10 +117,6 @@ def handle_program_chip(port, prog_value):
     print("  Program Chip with word {:04X}".format(prog_value))
     return True
 
-def handle_get_sector_bit_count(port, sector_address, read_mv):
-    bits_set = readout.get_sector_bit_count(port, sector_address, read_mv)
-    return bits_set
-
 def new_handle_read_data(port, address, read_mv, vt, bit_mode):
     vt_mode = True if vt is not None else False
     read_mv = read_mv if vt_mode else 0
@@ -287,6 +283,26 @@ def read_chip_voltages(port,voltages,sectors,location='.'):
     print()
     return
 
+def count_chip_bits(port, voltages, sectors, location='.'):
+    progress_count = 0
+    printProgressBar(0, len(voltages)*len(sectors), prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
+    for _, voltage in enumerate(voltages):
+        counts: list[int] = []
+        #print(f"{voltage}mV")
+        #print("SectorAddress, Count")
+        for _, base_address in enumerate(sectors):
+            count = readout.get_sector_bit_count(port, base_address, voltage)
+            counts.append(count)
+            time.sleep(0.003)
+            #print(f"0x{base_address:X}, {count:d}")
+            printProgressBar(progress_count, len(voltages)*len(sectors), prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
+            progress_count+=1
+        with open(os.path.join(location,"counts-{}.csv".format(voltage)), 'w') as f:
+            f.write("SectorAddress, Count\n")
+            for i in range(len(sectors)):
+                f.write(f"0x{sectors[i]:X}, {counts[i]:d}\n")
+    print()
+
 # ## No longer used
 # def get_voltage_sweep(port,base_address,voltages,method):
 #     if not method:
@@ -393,6 +409,7 @@ parser.add_argument('-lp', '--list-ports', action='store_true', help='list USB p
 parser.add_argument('-p', '--port', help='the USB port where the chip reader is installed')
 
 parser.add_argument('-r',  '--read', action='store_true', help='read data from the chip')
+parser.add_argument('-c', '--bitcount', action='store_true', help='count bits read as 1 in each sector')
 parser.add_argument('--sector', type=int, help='the sector of the chip to read')
 parser.add_argument('--sectors', type=int, nargs='+', help='a list of sectors of the chip to read, i.e. 0 65536 67043328')
 parser.add_argument('--start', type=int, help='the lowest voltage at which to read the chip in mV')
@@ -476,12 +493,21 @@ elif(args.read):
     directory = args.directory if args.directory else '.'
 
     if(args.sector is not None):
-        read_chip_voltages(ser, range(args.start, args.stop, args.step), [args.sector], location=directory)
+        if (args.bitcount):
+            count_chip_bits(ser, range(args.start, args.stop, args.step), [args.sector], location=directory)
+        else:
+            read_chip_voltages(ser, range(args.start, args.stop, args.step), [args.sector], location=directory)
     elif(args.sectors):
-        read_chip_voltages(ser, range(args.start, args.stop, args.step), args.sectors, location=directory)
+        if (args.bitcount):
+            count_chip_bits(ser, range(args.start, args.stop, args.step), args.sectors, location=directory)
+        else:
+            read_chip_voltages(ser, range(args.start, args.stop, args.step), args.sectors, location=directory)
     elif(args.all_sectors):
         start_address = args.start_address if args.start_address else 0
-        read_chip_voltages(ser, range(args.start, args.stop, args.step), range(start_address, 2**26, 2**16), location=directory)
+        if (args.bitcount):
+            count_chip_bits(ser, range(args.start, args.stop, args.step), range(start_address, 2**26, 2**16), location=directory)
+        else:
+            read_chip_voltages(ser, range(args.start, args.stop, args.step), range(start_address, 2**26, 2**16), location=directory)
         
 # Erase a sector or entire chip
 elif(args.erase):
