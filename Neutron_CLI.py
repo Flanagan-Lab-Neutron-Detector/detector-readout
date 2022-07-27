@@ -1,8 +1,6 @@
 import sys
-#import crcmod
 import serial
 import serial.tools.list_ports
-#import struct
 import matplotlib.pyplot as plt
 import numpy as np
 import time
