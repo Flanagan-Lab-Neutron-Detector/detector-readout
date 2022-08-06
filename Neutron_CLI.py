@@ -6,7 +6,8 @@ import numpy as np
 import time
 import os
 
-import nisoc_readout as readout
+import nisoc_readout as readout_prod
+import nisoc_readout_dummy as readout_test
 
 from argparse import ArgumentParser
 from functools import partial
@@ -33,7 +34,7 @@ def formatted_time(t):
 progBarStartTime = 0
 # Totally unnecessary progress meter ripped from the bowels of the internet
 # Print iterations progress
-def printProgressBar(iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█', printEnd = "\r"):
+def printProgressBar(iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█', printEnd = ''):
     global progBarStartTime
     """
     Call in a loop to create terminal progress bar
@@ -53,14 +54,11 @@ def printProgressBar(iteration, total, prefix = '', suffix = '', decimals = 1, l
     else:
         elapsedTime = int(time.time() - progBarStartTime)
         totalTime = int(elapsedTime * total / (iteration+1))
-        remainingTime = totalTime - elapsedTime
+        remainingTime = max(0, totalTime - elapsedTime)
     percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
     filledLength = int(length * iteration // total)
     bar = fill * filledLength + '-' * (length - filledLength)
-    print(f'\r{prefix} |{bar}| {percent}% {suffix} / {formatted_time(remainingTime)} remaining        ', end = printEnd)
-    # Print New Line on Complete
-    if iteration == total: 
-        print()
+    print(f'\r{prefix} |{bar}| {percent}% {suffix} / {formatted_time(remainingTime)} remaing', end = printEnd)
         
 ###########################
 # Communications routines #
@@ -228,7 +226,7 @@ def rev_b_get_mv(dac_code):
 # So we need voltages * len(sectors) * 128k of storage
 
 def new_read_chip_voltages(port, voltages, sectors, location='.'):
-    count = 0
+    count = 1
     printProgressBar(0, len(voltages)*128*len(sectors), prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
     for _, base_address in enumerate(sectors):
         for _, j in enumerate(voltages):
@@ -249,7 +247,7 @@ def new_read_chip_voltages(port, voltages, sectors, location='.'):
     print()
 
 def read_chip_voltages(port,voltages,sectors,location='.'):
-    count = 0
+    count = 1
     printProgressBar(0, len(voltages)*128*len(sectors), prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
     for idx2, base_address in enumerate(sectors):
         for idx1, j in enumerate(voltages):
@@ -282,7 +280,7 @@ def read_chip_voltages(port,voltages,sectors,location='.'):
     return
 
 def count_chip_bits(port, voltages, sectors, location='.'):
-    progress_count = 0
+    progress_count = 1
     printProgressBar(0, len(voltages)*len(sectors), prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
     for _, voltage in enumerate(voltages):
         counts: list[int] = []
@@ -454,10 +452,15 @@ if args.sectors and not (args.read or args.write):
     parser.error('--sectors may only be used in conjunction with --read or --write')
 
 # Check if a port is valid and assign serial object if possible
+# if not test, ser is assigned and readout is set to readout_prod
+# if test, ser stays None and readout is set to readout_test
 ser = None
+readout = None
 if(args.test):
-    pass
+    print("Running in Test Mode")
+    readout = readout_test
 elif(args.port):
+    readout = readout_prod
     print("Checking status of port " + args.port)
     try:
         ser = serial.Serial(args.port, 115200, bytesize = serial.EIGHTBITS,stopbits =serial.STOPBITS_ONE, parity  = serial.PARITY_NONE,timeout=1)
@@ -474,6 +477,8 @@ elif(args.port):
 
     # Wait just a bit before the next call
     time.sleep(.01)
+else:
+    print("Neither -t nor -p specified. Good luck.")
 
 # List ports    
 if(args.list_ports):
