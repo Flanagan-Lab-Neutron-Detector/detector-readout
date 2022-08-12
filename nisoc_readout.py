@@ -84,7 +84,7 @@ def validate_msg(header: bytearray, data: bytearray, exp_id: int) -> bool:
     crc = crc_4(data[0:length-4-4], crc)
 
     if msg_crc != crc:
-        raise MessageValidationError("Message crc {} != calc crc {} for message {} ({})".format(hex(msg_crc), hex(crc)), id, msg_names[id] if id in msg_names else "unknown message")
+        raise MessageValidationError("Message crc {} != calc crc {} for message {} ({})".format(hex(msg_crc), hex(crc), id, msg_names[id] if id in msg_names else "unknown message"))
     return True
 
 def make_cmd(cmd_len: int, id: int) -> bytearray:
