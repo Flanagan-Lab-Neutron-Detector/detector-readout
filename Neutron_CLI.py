@@ -6,7 +6,8 @@ import numpy as np
 import time
 import os
 
-import nisoc_readout as readout
+import nisoc_readout as readout_prod
+import nisoc_readout_dummy as readout_test
 
 from argparse import ArgumentParser
 from functools import partial
@@ -33,7 +34,7 @@ def formatted_time(t):
 progBarStartTime = 0
 # Totally unnecessary progress meter ripped from the bowels of the internet
 # Print iterations progress
-def printProgressBar(iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█', printEnd = "\r"):
+def printProgressBar(iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█', printEnd = ''):
     global progBarStartTime
     """
     Call in a loop to create terminal progress bar
@@ -53,14 +54,11 @@ def printProgressBar(iteration, total, prefix = '', suffix = '', decimals = 1, l
     else:
         elapsedTime = int(time.time() - progBarStartTime)
         totalTime = int(elapsedTime * total / (iteration+1))
-        remainingTime = totalTime - elapsedTime
+        remainingTime = max(0, totalTime - elapsedTime)
     percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
     filledLength = int(length * iteration // total)
     bar = fill * filledLength + '-' * (length - filledLength)
-    print(f'\r{prefix} |{bar}| {percent}% {suffix} / {formatted_time(remainingTime)} remaining        ', end = printEnd)
-    # Print New Line on Complete
-    if iteration == total: 
-        print()
+    print(f'\r\x1B[2K{prefix} |{bar}| {percent}% {suffix} / {formatted_time(remainingTime)} remaining', end = printEnd)
         
 ###########################
 # Communications routines #
@@ -93,29 +91,29 @@ def handle_vt_get_bit_count_kpage(port, base_address,read_mv):
     #return NDarray
     return False
 
-def handle_erase_chip(port):
-    readout.erase_chip(port)
+def handle_erase_chip():
+    readout.erase_chip()
     print("  Erase Chip")
     return True
 
-def handle_erase_sector(port, sector_address):
-    readout.erase_sector(port, sector_address)
+def handle_erase_sector(sector_address):
+    readout.erase_sector(sector_address)
     print("  Erase Sector {:08X} complete".format(sector_address))
     return True
 
-def handle_program_sector(port, sector_address, prog_value):
+def handle_program_sector(sector_address, prog_value):
     t = time.time()
-    readout.program_sector(port, sector_address, prog_value)
+    readout.program_sector(sector_address, prog_value)
     print("Program Sector {:08X} with word {:04X}".format(sector_address, prog_value))
     print("time to program sector: {:.2f} s".format(time.time() - t))
     return True
 
-def handle_program_chip(port, prog_value):
-    readout.program_chip(port, prog_value)
+def handle_program_chip(prog_value):
+    readout.program_chip(prog_value)
     print("  Program Chip with word {:04X}".format(prog_value))
     return True
 
-def new_handle_read_data(port, address, read_mv, vt, bit_mode):
+def new_handle_read_data(address, read_mv, vt, bit_mode):
     vt_mode = True if vt is not None else False
     read_mv = read_mv if vt_mode else 0
 
@@ -123,10 +121,10 @@ def new_handle_read_data(port, address, read_mv, vt, bit_mode):
     # I don't know what this is doing or why.
     # Removed repeat loop. Callers should catch exceptions
 
-    data = readout.read_data(port, address, vt_mode, read_mv)
+    data = readout.read_data(address, vt_mode, read_mv)
     return data
 
-def handle_read_data(port, address, read_mv, vt, bit_mode):
+def handle_read_data(address, read_mv, vt, bit_mode):
     vt_mode = True if vt is not None else False
     read_mv = read_mv if vt_mode else 0
 
@@ -134,7 +132,7 @@ def handle_read_data(port, address, read_mv, vt, bit_mode):
     # I don't know what this is doing or why.
     # Removed repeat loop. Callers should catch exceptions
 
-    data = readout.read_data(port, address, vt_mode, read_mv)
+    data = readout.read_data(address, vt_mode, read_mv)
 
     array = np.frombuffer(data, dtype=np.uint16)  # or dtype=np.dtype('<f4')
     bitarray = np.unpackbits(array.view(np.uint8))
@@ -173,14 +171,14 @@ def handle_read_data(port, address, read_mv, vt, bit_mode):
     # else:
     #     return NDarray
 
-def handle_ana_get_cal_counts(port):
-    ce_10v_cts, reset_10v_cts, wp_acc_10v_cts, spare_10v_cts = readout.ana_get_cal_counts(port)
+def handle_ana_get_cal_counts():
+    ce_10v_cts, reset_10v_cts, wp_acc_10v_cts, spare_10v_cts = readout.ana_get_cal_counts()
 
     print("  CE 10V Counts:       {}\r\n  Reset 10V Counts:    {}\r\n  WP/Acc 10V Counts:   {}\r\n  Spare 10V Counts:    {}".format(
           ce_10v_cts, reset_10v_cts, wp_acc_10v_cts, spare_10v_cts))
 
-def handle_ana_set_cal_counts(port, ce_10v_cts: int, reset_10v_cts: int, wp_acc_10v_cts: int, spare_10v_cts: int):
-    readout.ana_set_cal_counts(port, ce_10v_cts, reset_10v_cts, wp_acc_10v_cts, spare_10v_cts)
+def handle_ana_set_cal_counts(ce_10v_cts: int, reset_10v_cts: int, wp_acc_10v_cts: int, spare_10v_cts: int):
+    readout.ana_set_cal_counts(ce_10v_cts, reset_10v_cts, wp_acc_10v_cts, spare_10v_cts)
     print("  Set cal counts")
 
 analog_unit_map = {
@@ -190,10 +188,10 @@ analog_unit_map = {
     "spare" : 3
 }
 
-def handle_ana_set_active_counts(port, unit: str, counts: int):
+def handle_ana_set_active_counts(unit: str, counts: int):
     if unit in analog_unit_map:
         unit_num = analog_unit_map[unit]
-        readout.ana_set_active_counts(port, unit_num, counts)
+        readout.ana_set_active_counts(unit_num, counts)
         print("  Set {} ({}) counts to {}".format(unit, unit_num, counts))
     else:
         print(f"  Unknown unit {unit}")
@@ -227,29 +225,28 @@ def rev_b_get_mv(dac_code):
 # One sectors is 64kword of data = 128kB
 # So we need voltages * len(sectors) * 128k of storage
 
-def new_read_chip_voltages(port, voltages, sectors, location='.'):
-    count = 0
+def new_read_chip_voltages(voltages, sectors, location='.'):
+    count = 1
     printProgressBar(0, len(voltages)*128*len(sectors), prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
     for _, base_address in enumerate(sectors):
         for _, j in enumerate(voltages):
             #mem = [bytearray() for _ in range(128)]
             #for idx, address in enumerate(range(base_address, base_address + 65024 + 512, 512)):
-            #    mem[idx] = handle_read_data(port, address, j, 1, 0)
+            #    mem[idx] = handle_read_data(address, j, 1, 0)
             mem: list[bytearray] = []
             for _,address in enumerate(range(base_address, base_address + 65024 + 512, 512)):
-                mem.append(new_handle_read_data(port, address, j, 1, 0))
-                time.sleep(0.003)
+                mem.append(new_handle_read_data(address, j, 1, 0))
                 printProgressBar(count, len(voltages)*128*len(sectors), prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
                 count+=1
-            #mem = [new_handle_read_data(port, address, j, 1, 0)
+            #mem = [new_handle_read_data(address, j, 1, 0)
             #       for _,address in enumerate(range(base_address, base_address + 65024 + 512, 512))]
             with open(os.path.join(location,"data-{}-{}.dat".format(j,base_address)), 'wb') as f:
                 for block in mem:
                     f.write(block)
     print()
 
-def read_chip_voltages(port,voltages,sectors,location='.'):
-    count = 0
+def read_chip_voltages(voltages, sectors, location='.'):
+    count = 1
     printProgressBar(0, len(voltages)*128*len(sectors), prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
     for idx2, base_address in enumerate(sectors):
         for idx1, j in enumerate(voltages):
@@ -260,7 +257,7 @@ def read_chip_voltages(port,voltages,sectors,location='.'):
                 retries = 3
                 while retries > 0:
                     try:
-                        NDarray = handle_read_data(port, address, j, 1, 0)
+                        NDarray = handle_read_data(address, j, 1, 0)
                         break
                     except Exception as e:
                         print(f"Exception in read_chip_voltages at {address} @ {j} mV: {e}")
@@ -273,7 +270,6 @@ def read_chip_voltages(port,voltages,sectors,location='.'):
                 else:
                     saved_array = np.vstack((saved_array,NDarray))
                     #print(saved_array)
-                time.sleep(0.003) # This doesn't end up slowing us down much, but it does avoid costly serial timeout errors.
                 printProgressBar(count, len(voltages)*128*len(sectors), prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
                 count+=1
             np.savetxt(os.path.join(location,"data-{}-{}.csv".format(j,base_address)), saved_array, fmt='%d', delimiter='')
@@ -281,17 +277,16 @@ def read_chip_voltages(port,voltages,sectors,location='.'):
     print()
     return
 
-def count_chip_bits(port, voltages, sectors, location='.'):
-    progress_count = 0
+def count_chip_bits(voltages, sectors, location='.'):
+    progress_count = 1
     printProgressBar(0, len(voltages)*len(sectors), prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
     for _, voltage in enumerate(voltages):
         counts: list[int] = []
         #print(f"{voltage}mV")
         #print("SectorAddress, Count")
         for _, base_address in enumerate(sectors):
-            count = readout.get_sector_bit_count(port, base_address, voltage)
+            count = readout.get_sector_bit_count(base_address, voltage)
             counts.append(count)
-            time.sleep(0.003)
             #print(f"0x{base_address:X}, {count:d}")
             printProgressBar(progress_count, len(voltages)*len(sectors), prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
             progress_count+=1
@@ -349,7 +344,7 @@ def count_chip_bits(port, voltages, sectors, location='.'):
 #     plt.show()
 #     return
 
-def get_bit_noise(port, sector_address, voltages,iterations):
+def get_bit_noise(sector_address, voltages,iterations):
     max = iterations
     real_count = 0
     n_bins = int((voltages[-1]-voltages[0])/10)
@@ -360,7 +355,7 @@ def get_bit_noise(port, sector_address, voltages,iterations):
         data_matrix = []
         for idx,j in enumerate(voltages):
             #print(idx,i,j)
-            NDarray = handle_read_data(port, sector_address, j,1,0)
+            NDarray = handle_read_data(sector_address, j,1,0)
             if not isinstance(NDarray,bool):
                 data_matrix.append([j,NDarray])
                 # vgrad = np.gradient(NDarray)
@@ -452,12 +447,32 @@ if args.start_address and not (args.all_sectors and args.read):
 
 if args.sectors and not (args.read or args.write):
     parser.error('--sectors may only be used in conjunction with --read or --write')
+    
+# Serial read/write
+class SerialTimeoutError(Exception):
+    """Raised on timeout when reading serial port"""
+    pass
+
+def ser_read(n: int) -> bytes:
+    data = ser.read(n)
+    if len(data) < n:
+        raise SerialTimeoutError(f"Serial timeout. Expected {n} bytes, got {len(data)}")
+    return data
+
+def ser_write(data) -> None:
+    ser.write(data)
+    time.sleep(0.003)
 
 # Check if a port is valid and assign serial object if possible
-ser = None
+# if not test, ser is assigned and readout is set to readout_prod
+# if test, ser stays None and readout is set to readout_test
+ser: serial.Serial = None
+readout = None
 if(args.test):
-    pass
+    print("Running in Test Mode")
+    readout = readout_test.Readout(ser_read, ser_write)
 elif(args.port):
+    readout = readout_prod.Readout(ser_read, ser_write)
     print("Checking status of port " + args.port)
     try:
         ser = serial.Serial(args.port, 115200, bytesize = serial.EIGHTBITS,stopbits =serial.STOPBITS_ONE, parity  = serial.PARITY_NONE,timeout=1)
@@ -465,15 +480,14 @@ elif(args.port):
         print(e)
         parser.error("It appears there was a problem with your USB port")
 
-    uptime, version, is_busy = readout.ping(ser)
+    uptime, version, is_busy = readout.ping()
     
     print("  Ping")
     print(f"    Firmware {version}")
     print(f"    Uptime   {uptime}s")
     print(f"    idle     {bool(is_busy)}")
-
-    # Wait just a bit before the next call
-    time.sleep(.01)
+else:
+    print("Neither -t nor -p specified. Good luck.")
 
 # List ports    
 if(args.list_ports):
@@ -489,41 +503,42 @@ elif(args.read):
     if(args.directory):
         os.mkdir(args.directory)
     directory = args.directory if args.directory else '.'
+    print(directory)
 
     if(args.sector is not None):
         if (args.bitcount):
-            count_chip_bits(ser, range(args.start, args.stop, args.step), [args.sector], location=directory)
+            count_chip_bits(range(args.start, args.stop, args.step), [args.sector], location=directory)
         else:
-            read_chip_voltages(ser, range(args.start, args.stop, args.step), [args.sector], location=directory)
+            read_chip_voltages(range(args.start, args.stop, args.step), [args.sector], location=directory)
     elif(args.sectors):
         if (args.bitcount):
-            count_chip_bits(ser, range(args.start, args.stop, args.step), args.sectors, location=directory)
+            count_chip_bits(range(args.start, args.stop, args.step), args.sectors, location=directory)
         else:
-            read_chip_voltages(ser, range(args.start, args.stop, args.step), args.sectors, location=directory)
+            read_chip_voltages(range(args.start, args.stop, args.step), args.sectors, location=directory)
     elif(args.all_sectors):
         start_address = args.start_address if args.start_address else 0
         if (args.bitcount):
-            count_chip_bits(ser, range(args.start, args.stop, args.step), range(start_address, 2**26, 2**16), location=directory)
+            count_chip_bits(range(args.start, args.stop, args.step), range(start_address, 2**26, 2**16), location=directory)
         else:
-            read_chip_voltages(ser, range(args.start, args.stop, args.step), range(start_address, 2**26, 2**16), location=directory)
+            read_chip_voltages(range(args.start, args.stop, args.step), range(start_address, 2**26, 2**16), location=directory)
         
 # Erase a sector or entire chip
 elif(args.erase):
     if(args.sector):
-        handle_erase_sector(ser, args.sector)
+        handle_erase_sector(args.sector)
     elif(args.all_sectors):
-        handle_erase_chip(ser)
+        handle_erase_chip()
 
 # Write a sector or entire chip
 elif(args.write):
     if(args.sector):
-        handle_program_sector(ser, args.sector, args.value)
+        handle_program_sector(args.sector, args.value)
     elif(args.sectors):
         for sector in args.sectors:
-            handle_program_sector(ser, args.sector, args.value)
+            handle_program_sector(args.sector, args.value)
     elif(args.all_sectors):
         try:
-            handle_program_chip(ser, args.value)
+            handle_program_chip(args.value)
         except readout.SerialTimeoutError as te:
             print("Writing a chip takes about 30 minutes and will continue despite the serial error that causes this macro to abort. Please wait until the chip stops flashing.")
             print(te)
