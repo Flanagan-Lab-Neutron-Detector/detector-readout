@@ -261,6 +261,8 @@ def read_chip_voltages(voltages, sectors, location='.'):
                         break
                     except Exception as e:
                         print(f"Exception in read_chip_voltages at {address} @ {j} mV: {e}")
+                    finally:
+                        retries -= 1
                 if retries == 0:
                     print("Retries exceeded. Exiting")
                     exit(1)
@@ -460,8 +462,8 @@ def ser_read(n: int) -> bytes:
     return data
 
 def ser_write(data) -> None:
-    ser.write(data)
     time.sleep(0.003)
+    ser.write(data)
 
 # Check if a port is valid and assign serial object if possible
 # if not test, ser is assigned and readout is set to readout_prod
