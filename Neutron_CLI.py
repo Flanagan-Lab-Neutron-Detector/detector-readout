@@ -541,7 +541,7 @@ elif(args.write):
     elif(args.all_sectors):
         try:
             handle_program_chip(args.value)
-        except readout.SerialTimeoutError as te:
+        except SerialTimeoutError as te:
             print("Writing a chip takes about 30 minutes and will continue despite the serial error that causes this macro to abort. Please wait until the chip stops flashing.")
             print(te)
         except Exception as e:
