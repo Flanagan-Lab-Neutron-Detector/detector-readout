@@ -28,7 +28,7 @@ log "Program delay 1h"
 sleep 1h # delay to allow the device to write and then settle
 
 log "Writing to $savedir"
-log "Bit count all sectors in mV range [$mv_start, $mv_stop) by $ms_step mV"
+log "Bit count all sectors in range [$mv_start, $mv_stop) mV in steps of $mv_step mV"
 python3 Neutron_CLI.py --p $port -r --bitcount --all-sectors --start $mv_start --stop $mv_stop --step $mv_step -d $savedir
 
 log "Complete!"
