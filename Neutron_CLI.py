@@ -188,6 +188,13 @@ analog_unit_map = {
     "spare" : 3
 }
 
+analog_unit_map_inv = {
+    0 : "ce",
+    1 : "reset",
+    2 : "wp_acc",
+    3 : "spare"
+}
+
 def handle_ana_set_active_counts(unit: str, counts: int):
     if unit in analog_unit_map:
         unit_num = analog_unit_map[unit]
@@ -419,6 +426,10 @@ parser.add_argument('-e', "--erase", action='store_true', help='erase data from 
 parser.add_argument('-w', '--write', action='store_true', help='write data to the chip')
 parser.add_argument('-v', '--value', type=partial(int, base=0), help='the hex value to store in each byte')
 
+parser.add_argument('--calget', action='store_true', help='print analog calibration values')
+parser.add_argument('--anaset', type=partial(int, base=0), help='set analog output counts')
+parser.add_argument('--unit', type=partial(int, base=0), help='analog unit. 0=CE# 1=RESET# 2=WP# 3=SPARE')
+
 parser.add_argument('-t', '--test', action='store_true', help='bypass real serial port')
 
 args = parser.parse_args()
@@ -449,6 +460,13 @@ if args.start_address and not (args.all_sectors and args.read):
 
 if args.sectors and not (args.read or args.write):
     parser.error('--sectors may only be used in conjunction with --read or --write')
+
+if args.anaset is not None and args.unit is None:
+    parser.error('--anaset requires --unit [0-3]')
+if args.anaset is not None and (args.anaset < 0 or args.anaset > 4095):
+    parser.error('--anaset counts must be > 0 and < 4096')
+if args.unit is not None and (args.unit < 0 or args.unit > 3):
+    parser.error('--unit must be > 0 and < 4')
     
 # Serial read/write
 class SerialTimeoutError(Exception):
@@ -546,3 +564,16 @@ elif(args.write):
             print(te)
         except Exception as e:
             print(f"Got unexpected exception when programming chip: {e}")
+
+# Print calibration counts
+elif(args.calget):
+    handle_ana_get_cal_counts()
+
+# TODO: set calibration counts
+
+# Set analog output
+elif(args.anaset is not None):
+    # counts and unit are verified above
+    readout.ana_set_active_counts(args.unit, args.anaset)
+    print(f"  Set unit {args.unit} ({analog_unit_map_inv[args.unit]}) counts to {args.anaset}")
+
