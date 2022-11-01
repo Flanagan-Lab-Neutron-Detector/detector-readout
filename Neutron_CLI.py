@@ -427,6 +427,7 @@ parser.add_argument('-w', '--write', action='store_true', help='write data to th
 parser.add_argument('-v', '--value', type=partial(int, base=0), help='the hex value to store in each byte')
 
 parser.add_argument('--calget', action='store_true', help='print analog calibration values')
+parser.add_argument('--calset', type=partial(int, base=0), help='set analog calibration counts')
 parser.add_argument('--anaset', type=partial(int, base=0), help='set analog output counts')
 parser.add_argument('--unit', type=partial(int, base=0), help='analog unit. 0=CE# 1=RESET# 2=WP# 3=SPARE')
 
@@ -465,6 +466,12 @@ if args.anaset is not None and args.unit is None:
     parser.error('--anaset requires --unit [0-3]')
 if args.anaset is not None and (args.anaset < 0 or args.anaset > 4095):
     parser.error('--anaset counts must be > 0 and < 4096')
+
+if args.calset is not None and args.unit is None:
+    parser.error('--calset requires --unit [0-3]')
+if args.calset is not None and (args.calset < 0 or args.calset > 4095):
+    parser.error('--calset counts must be > 0 and < 4096')
+
 if args.unit is not None and (args.unit < 0 or args.unit > 3):
     parser.error('--unit must be > 0 and < 4')
     
@@ -568,6 +575,36 @@ elif(args.write):
 # Print calibration counts
 elif(args.calget):
     handle_ana_get_cal_counts()
+elif(args.calset):
+    # counts and unit are verified above
+    # print pre
+    print("  Old calibration counts:")
+    ce_10v_cts, reset_10v_cts, wp_acc_10v_cts, spare_10v_cts = readout.ana_get_cal_counts()
+    print("    CE 10V Counts:       {}\r\n    Reset 10V Counts:    {}\r\n    WP/Acc 10V Counts:   {}\r\n    Spare 10V Counts:    {}".format(
+          ce_10v_cts, reset_10v_cts, wp_acc_10v_cts, spare_10v_cts))
+
+    # set counts for this unit
+    if args.unit == 0:
+        print(f"  Set CE# 10V cal counts to {args.calset}")
+        ce_10v_cts = args.calset
+    elif args.unit == 1:
+        print(f"  Set RESET# 10V cal counts to {args.calset}")
+        reset_10v_cts = args.calset
+    elif args.unit == 2:
+        print(f"  Set WP/ACC# 10V cal counts to {args.calset}")
+        wp_acc_10v_cts = args.calset
+    elif args.unit == 3:
+        print(f"  Set SPARE# 10V cal counts to {args.calset}")
+        spare_10v_cts = args.calset
+    else:
+        print("UNKNOWN UNIT")
+    readout.ana_set_cal_counts(ce_10v_cts, reset_10v_cts, wp_acc_10v_cts, spare_10v_cts)
+
+    time.sleep(0.01)
+    print("  New calibration counts:")
+    ce_10v_cts, reset_10v_cts, wp_acc_10v_cts, spare_10v_cts = readout.ana_get_cal_counts()
+    print("    CE 10V Counts:       {}\r\n    Reset 10V Counts:    {}\r\n    WP/Acc 10V Counts:   {}\r\n    Spare 10V Counts:    {}".format(
+          ce_10v_cts, reset_10v_cts, wp_acc_10v_cts, spare_10v_cts))
 
 # TODO: set calibration counts
 
