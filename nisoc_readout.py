@@ -17,77 +17,77 @@ CRC_XOR_OUT = 0
 crc_f = crcmod.mkCrcFun(CRC_POLY, rev=False, initCrc=CRC_SEED, xorOut=CRC_XOR_OUT)
 
 def crc_4(arr, start=CRC_SEED):
-    crc = start
-    i = 0
-    while i < len(arr):
-        crc = crc_f(bytearray((arr[i+3], arr[i+2], arr[i+1], arr[i])), crc)
-        i += 4
-    return crc
+	crc = start
+	i = 0
+	while i < len(arr):
+		crc = crc_f(bytearray((arr[i+3], arr[i+2], arr[i+1], arr[i])), crc)
+		i += 4
+	return crc
 
 # Exceptions
 
 class MessageValidationError(Exception):
-    """Raised when there is an error validating a message"""
-    pass
+	"""Raised when there is an error validating a message"""
+	pass
 
 class SerialTimeoutError(Exception):
-    """Raised on timeout when reading serial port"""
-    pass
+	"""Raised on timeout when reading serial port"""
+	pass
 
 # Communications
 
 HDR_START_CHAR = 0x7E
 
 MSG_NAMES = {
-    0 : "null",
-    2 : "cmd_ping",
-    3 : "rsp_ping",
-    4 : "rsp_unknown_cmd",
-    5 : "rsp_failed",
-    6 : "cmd_vt_get_bit_count_kpage",
-    7 : "rsp_vt_get_bit_count_kpage",
-    8 : "cmd_erase_chip",
-    9 : "rsp_erase_chip",
-    10 : "cmd_erase_sector",
-    11 : "rsp_erase_sector",
-    12 : "cmd_program_sector",
-    13 : "rsp_program_sector",
-    14 : "cmd_program_chip",
-    15 : "rsp_program_chip",
-    16 : "cmd_get_sector_bit_count",
-    17 : "rsp_get_sector_bit_count",
-    18 : "cmd_read_data",
-    19 : "rsp_read_data",
-    20 : "cmd_write_data",
-    21 : "rsp_write_data",
+	0 : "null",
+	2 : "cmd_ping",
+	3 : "rsp_ping",
+	4 : "rsp_unknown_cmd",
+	5 : "rsp_failed",
+	6 : "cmd_vt_get_bit_count_kpage",
+	7 : "rsp_vt_get_bit_count_kpage",
+	8 : "cmd_erase_chip",
+	9 : "rsp_erase_chip",
+	10 : "cmd_erase_sector",
+	11 : "rsp_erase_sector",
+	12 : "cmd_program_sector",
+	13 : "rsp_program_sector",
+	14 : "cmd_program_chip",
+	15 : "rsp_program_chip",
+	16 : "cmd_get_sector_bit_count",
+	17 : "rsp_get_sector_bit_count",
+	18 : "cmd_read_data",
+	19 : "rsp_read_data",
+	20 : "cmd_write_data",
+	21 : "rsp_write_data",
 
-    80 : "cmd_ana_get_cal_counts",
-    81 : "rsp_ana_get_cal_counts",
-    82 : "cmd_ana_set_cal_counts",
-    83 : "rsp_ana_set_cal_counts",
-    84 : "cmd_ana_set_active_counts",
-    85 : "rsp_ana_set_active_counts"
+	80 : "cmd_ana_get_cal_counts",
+	81 : "rsp_ana_get_cal_counts",
+	82 : "cmd_ana_set_cal_counts",
+	83 : "rsp_ana_set_cal_counts",
+	84 : "cmd_ana_set_active_counts",
+	85 : "rsp_ana_set_active_counts"
 }
 
 MSG_IDS = { MSG_NAMES[msg_id]: msg_id for msg_id in MSG_NAMES }
 
 def _validate_msg(header: bytearray, data: bytearray, exp_id: int) -> bool:
-    start_char, length, id = struct.unpack_from("<BHB", header, 0)
+	start_char, length, id = struct.unpack_from("<BHB", header, 0)
 
-    if start_char != 0x7E:
-        raise MessageValidationError("Wrong start char {}".format(hex(start_char)))
-    if len(data) < (length-4):
-        raise MessageValidationError("Data length too short ({} < {})".format(len(data), length-4))
-    if id != exp_id:
-        raise MessageValidationError("Expected message ID {}. Got Message ID {} ({})".format(exp_id, id, MSG_NAMES[id] if id in MSG_NAMES else "unknown message"))
+	if start_char != 0x7E:
+		raise MessageValidationError("Wrong start char {}".format(hex(start_char)))
+	if len(data) < (length-4):
+		raise MessageValidationError("Data length too short ({} < {})".format(len(data), length-4))
+	if id != exp_id:
+		raise MessageValidationError("Expected message ID {}. Got Message ID {} ({})".format(exp_id, id, MSG_NAMES[id] if id in MSG_NAMES else "unknown message"))
 
-    msg_crc, = struct.unpack_from("<I", data, length-4-4)
-    crc = crc_4(header)
-    crc = crc_4(data[0:length-4-4], crc)
+	msg_crc, = struct.unpack_from("<I", data, length-4-4)
+	crc = crc_4(header)
+	crc = crc_4(data[0:length-4-4], crc)
 
-    if msg_crc != crc:
-        raise MessageValidationError("Message crc {} != calc crc {} for message {} ({})".format(hex(msg_crc), hex(crc), id, MSG_NAMES[id] if id in MSG_NAMES else "unknown message"))
-    return True
+	if msg_crc != crc:
+		raise MessageValidationError("Message crc {} != calc crc {} for message {} ({})".format(hex(msg_crc), hex(crc), id, MSG_NAMES[id] if id in MSG_NAMES else "unknown message"))
+	return True
 
 def _read_rsp(readfunc, rsp_id: int) -> bytes:
 	rsp_header = readfunc(4)
@@ -97,13 +97,13 @@ def _read_rsp(readfunc, rsp_id: int) -> bytes:
 	return rsp_data
 
 def _make_cmd(cmd_len: int, id: int) -> bytearray:
-    data = bytearray(cmd_len)
-    struct.pack_into("<BHB", data, 0, HDR_START_CHAR, cmd_len, id)
-    return data
+	data = bytearray(cmd_len)
+	struct.pack_into("<BHB", data, 0, HDR_START_CHAR, cmd_len, id)
+	return data
 
 def _insert_crc(data: bytearray) -> None:
-    crc = crc_4(data[0:len(data)-4])
-    struct.pack_into("<I", data, len(data)-4, crc)
+	crc = crc_4(data[0:len(data)-4])
+	struct.pack_into("<I", data, len(data)-4, crc)
 
 class Readout:
 	readfunc = None
@@ -203,8 +203,8 @@ class Readout:
 
 		# data = []
 		# for i in range(0, 1024, 2):
-		#     word, = struct.unpack_from("<H", rsp_data, 4 + 2*i)
-		#     data.append(word)
+		#	 word, = struct.unpack_from("<H", rsp_data, 4 + 2*i)
+		#	 data.append(word)
 
 		return bytearray(rsp_data[0:-4])
 
@@ -252,10 +252,10 @@ class Readout:
 
 	def ana_set_active_counts(self, unit: int, unit_counts: int) -> None:
 		# Analog units
-		# CE#      0
+		# CE#	  0
 		# RESET#   1
 		# WP/ACC#  2
-		# SPARE    3
+		# SPARE	3
 		cmd_len = 16
 		#rsp_len = 8
 		cmd_data = _make_cmd(cmd_len, MSG_IDS['cmd_ana_set_active_counts'])
