@@ -558,7 +558,7 @@ elif(args.erase):
 
 # Write a sector or entire chip
 elif(args.write):
-    if(args.sector):
+    if(args.sector is not None):
         handle_program_sector(args.sector, args.value)
     elif(args.sectors):
         for sector in args.sectors:
