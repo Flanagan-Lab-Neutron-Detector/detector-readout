@@ -551,7 +551,7 @@ elif(args.read):
         
 # Erase a sector or entire chip
 elif(args.erase):
-    if(args.sector):
+    if(args.sector is not None):
         handle_erase_sector(args.sector)
     elif(args.all_sectors):
         handle_erase_chip()
