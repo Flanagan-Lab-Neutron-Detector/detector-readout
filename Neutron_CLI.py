@@ -113,13 +113,9 @@ def handle_program_chip(prog_value):
     print("  Program Chip with word {:04X}".format(prog_value))
     return True
 
-def new_handle_read_data(address, read_mv, vt, bit_mode):
+def new_handle_read_data(address, read_mv, vt):
     vt_mode = True if vt is not None else False
     read_mv = read_mv if vt_mode else 0
-
-    # Original adapted for read_data call.
-    # I don't know what this is doing or why.
-    # Removed repeat loop. Callers should catch exceptions
 
     data = readout.read_data(address, vt_mode, read_mv)
     return data
@@ -232,7 +228,7 @@ def rev_b_get_mv(dac_code):
 # One sectors is 64kword of data = 128kB
 # So we need voltages * len(sectors) * 128k of storage
 
-def new_read_chip_voltages(voltages, sectors, location='.'):
+def read_chip_voltages_binary(voltages, sectors, location='.'):
     count = 1
     printProgressBar(0, len(voltages)*128*len(sectors), prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
     for _, base_address in enumerate(sectors):
@@ -242,17 +238,32 @@ def new_read_chip_voltages(voltages, sectors, location='.'):
             #    mem[idx] = handle_read_data(address, j, 1, 0)
             mem: list[bytearray] = []
             for _,address in enumerate(range(base_address, base_address + 65024 + 512, 512)):
-                mem.append(new_handle_read_data(address, j, 1, 0))
+                #print(f"\n[read_chip_voltages_binary] Reading {base_address:X} + {address-base_address:X} @ {j} mV")
+                data = []
+                retries = 3
+                while retries > 0:
+                    try:
+                        data = new_handle_read_data(address, j, True)
+                        break
+                    except Exception as e:
+                        print(f"\n\nException in read_chip_voltages at {address} @ {j} mV: {e}\n")
+                    finally:
+                        retries -= 1
+                if retries == 0:
+                    print("\nRetries exceeded. Exiting.")
+                    exit(1)
+
+                mem.append(data)
                 printProgressBar(count, len(voltages)*128*len(sectors), prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
                 count+=1
             #mem = [new_handle_read_data(address, j, 1, 0)
             #       for _,address in enumerate(range(base_address, base_address + 65024 + 512, 512))]
-            with open(os.path.join(location,"data-{}-{}.dat".format(j,base_address)), 'wb') as f:
+            with open(os.path.join(location, f"data-{j}.bin"), 'ab') as f:
                 for block in mem:
                     f.write(block)
     print()
 
-def read_chip_voltages(voltages, sectors, location='.'):
+def read_chip_voltages_csv(voltages, sectors, location='.'):
     count = 1
     printProgressBar(0, len(voltages)*128*len(sectors), prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
     for idx2, base_address in enumerate(sectors):
@@ -431,6 +442,8 @@ parser.add_argument('--calset', type=partial(int, base=0), help='set analog cali
 parser.add_argument('--anaset', type=partial(int, base=0), help='set analog output counts')
 parser.add_argument('--unit', type=partial(int, base=0), help='analog unit. 0=CE# 1=RESET# 2=WP# 3=SPARE')
 
+parser.add_argument('--format', type=str, choices=['binary', 'csv'], default='csv', help='select data format')
+
 parser.add_argument('-t', '--test', action='store_true', help='bypass real serial port')
 
 args = parser.parse_args()
@@ -536,18 +549,27 @@ elif(args.read):
         if (args.bitcount):
             count_chip_bits(range(args.start, args.stop, args.step), [args.sector], location=directory)
         else:
-            read_chip_voltages(range(args.start, args.stop, args.step), [args.sector], location=directory)
+            if args.format == 'binary':
+                read_chip_voltages_binary(range(args.start, args.stop, args.step), [args.sector], location=directory)
+            else:
+                read_chip_voltages_csv(range(args.start, args.stop, args.step), [args.sector], location=directory)
     elif(args.sectors):
         if (args.bitcount):
             count_chip_bits(range(args.start, args.stop, args.step), args.sectors, location=directory)
         else:
-            read_chip_voltages(range(args.start, args.stop, args.step), args.sectors, location=directory)
+            if args.format == 'binary':
+                read_chip_voltages_binary(range(args.start, args.stop, args.step), args.sectors, location=directory)
+            else:
+                read_chip_voltages_csv(range(args.start, args.stop, args.step), args.sectors, location=directory)
     elif(args.all_sectors):
         start_address = args.start_address if args.start_address else 0
         if (args.bitcount):
             count_chip_bits(range(args.start, args.stop, args.step), range(start_address, 2**26, 2**16), location=directory)
         else:
-            read_chip_voltages(range(args.start, args.stop, args.step), range(start_address, 2**26, 2**16), location=directory)
+            if args.format == 'binary':
+                read_chip_voltages_binary(range(args.start, args.stop, args.step), range(start_address, 2**26, 2**16), location=directory)
+            else:
+                read_chip_voltages_csv(range(args.start, args.stop, args.step), range(start_address, 2**26, 2**16), location=directory)
         
 # Erase a sector or entire chip
 elif(args.erase):
