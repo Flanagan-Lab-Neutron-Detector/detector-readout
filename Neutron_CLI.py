@@ -236,8 +236,9 @@ def read_chip_voltages_binary(voltages, sectors, location='.'):
             #mem = [bytearray() for _ in range(128)]
             #for idx, address in enumerate(range(base_address, base_address + 65024 + 512, 512)):
             #    mem[idx] = handle_read_data(address, j, 1, 0)
-            mem: list[bytearray] = []
-            for _,address in enumerate(range(base_address, base_address + 65024 + 512, 512)):
+            addr_range = range(base_address, base_address + 65024 + 512, 512)
+            mem: list[bytearray] = [bytearray()]*len(addr_range)
+            for i,address in enumerate(addr_range):
                 #print(f"\n[read_chip_voltages_binary] Reading {base_address:X} + {address-base_address:X} @ {j} mV")
                 data = []
                 retries = 3
@@ -253,9 +254,10 @@ def read_chip_voltages_binary(voltages, sectors, location='.'):
                     print("\nRetries exceeded. Exiting.")
                     exit(1)
 
-                mem.append(data)
-                printProgressBar(count, len(voltages)*128*len(sectors), prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
+                #mem.append(data)
+                mem[i] = data
                 count+=1
+            printProgressBar(count, len(voltages)*128*len(sectors), prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
             #mem = [new_handle_read_data(address, j, 1, 0)
             #       for _,address in enumerate(range(base_address, base_address + 65024 + 512, 512))]
             with open(os.path.join(location, f"data-{j}.bin"), 'ab') as f:
