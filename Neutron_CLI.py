@@ -59,7 +59,7 @@ def printProgressBar(iteration, total, prefix = '', suffix = '', decimals = 1, l
     filledLength = int(length * iteration // total)
     bar = fill * filledLength + '-' * (length - filledLength)
     print(f'\r\x1B[2K{prefix} |{bar}| {percent}% {suffix} / {formatted_time(remainingTime)} remaining', end = printEnd)
-        
+
 ###########################
 # Communications routines #
 ###########################
@@ -157,7 +157,7 @@ def handle_read_data(address, read_mv, vt, bit_mode):
     # else:
     #     # repeat call
     #     if current_iter > max_repeats:
-    #         print(f"Unable to read after {max_repeats} attempts. Skipping.") 
+    #         print(f"Unable to read after {max_repeats} attempts. Skipping.")
     #         return 0 if bit_mode else np.full((512, 16),2,dtype=np.uint8)
     #     else:
     #         print(f"Repeating call to read data at address {address}. Attempt #{current_iter} failed.")
@@ -166,16 +166,6 @@ def handle_read_data(address, read_mv, vt, bit_mode):
     #     return sum(bitarray)
     # else:
     #     return NDarray
-
-def handle_ana_get_cal_counts():
-    ce_10v_cts, reset_10v_cts, wp_acc_10v_cts, spare_10v_cts = readout.ana_get_cal_counts()
-
-    print("  CE 10V Counts:       {}\r\n  Reset 10V Counts:    {}\r\n  WP/Acc 10V Counts:   {}\r\n  Spare 10V Counts:    {}".format(
-          ce_10v_cts, reset_10v_cts, wp_acc_10v_cts, spare_10v_cts))
-
-def handle_ana_set_cal_counts(ce_10v_cts: int, reset_10v_cts: int, wp_acc_10v_cts: int, spare_10v_cts: int):
-    readout.ana_set_cal_counts(ce_10v_cts, reset_10v_cts, wp_acc_10v_cts, spare_10v_cts)
-    print("  Set cal counts")
 
 analog_unit_map = {
     "ce" : 0,
@@ -190,6 +180,28 @@ analog_unit_map_inv = {
     2 : "wp_acc",
     3 : "spare"
 }
+
+def handle_ana_get_cal_counts_nr0():
+    ce_10v_cts, reset_10v_cts, wp_acc_10v_cts, spare_10v_cts = readout.ana_get_cal_counts()
+
+    print("  CE 10V Counts:       {}\r\n  Reset 10V Counts:    {}\r\n  WP/Acc 10V Counts:   {}\r\n  Spare 10V Counts:    {}".format(
+          ce_10v_cts, reset_10v_cts, wp_acc_10v_cts, spare_10v_cts))
+
+def handle_ana_get_cal_counts_nr1():
+    dac1calc0, dac1calc1 = readout.ana_get_cal_counts(1)
+    dac2calc0, dac2calc1 = readout.ana_get_cal_counts(2)
+    print(f"  Unit 1 {analog_unit_map_inv[1]} C0 = {dac1calc0}, C1 = {dac1calc1}")
+    print(f"  Unit 2 {analog_unit_map_inv[2]} C0 = {dac2calc0}, C1 = {dac2calc1}")
+
+def handle_ana_get_cal_counts():
+    if isinstance(readout, readout_prod.ReadoutNR1):
+        handle_ana_get_cal_counts_nr1()
+    else:
+        handle_ana_get_cal_counts_nr0()
+
+def handle_ana_set_cal_counts(ce_10v_cts: int, reset_10v_cts: int, wp_acc_10v_cts: int, spare_10v_cts: int):
+    readout.ana_set_cal_counts(ce_10v_cts, reset_10v_cts, wp_acc_10v_cts, spare_10v_cts)
+    print("  Set cal counts")
 
 def handle_ana_set_active_counts(unit: str, counts: int):
     if unit in analog_unit_map:
@@ -458,7 +470,7 @@ if (args.sector and args.all_sectors) or (args.sector and args.sectors) or (args
 if (args.read or args.write or args.erase) and not (args.port or args.test):
     parser.error("--read, --write, and --erase always require --port \n"
                  "use --list-ports to see a list of available usb ports")
-    
+
 if args.read and ((args.sector is None and not args.sectors and not args.all_sectors) or args.start is None or args.stop is None or args.step is None):
     parser.error("--read requires --sector or --sectors or all-sectors, --start, --stop, and --step \n"
                  "suggested test values are --sector 800000 --start 2000 --stop 7000 --step 1000")
@@ -489,7 +501,7 @@ if args.calset is not None and (args.calset < 0 or args.calset > 4095):
 
 if args.unit is not None and (args.unit < 0 or args.unit > 3):
     parser.error('--unit must be > 0 and < 4')
-    
+
 # Serial read/write
 class SerialTimeoutError(Exception):
     """Raised on timeout when reading serial port"""
@@ -514,7 +526,7 @@ if(args.test):
     print("Running in Test Mode")
     readout = readout_test.Readout(ser_read, ser_write)
 elif(args.port):
-    readout = readout_prod.Readout(ser_read, ser_write)
+    readout = readout_prod.ReadoutNR0(ser_read, ser_write)
     print("Checking status of port " + args.port)
     try:
         ser = serial.Serial(args.port, 115200, bytesize = serial.EIGHTBITS,stopbits =serial.STOPBITS_ONE, parity  = serial.PARITY_NONE,timeout=1)
@@ -523,7 +535,14 @@ elif(args.port):
         parser.error("It appears there was a problem with your USB port")
 
     uptime, version, is_busy = readout.ping()
-    
+
+    if version == "NR1 test":
+        print("Connected to NR1 prototype")
+        readout = readout_prod.ReadoutNR1(ser_read, ser_write)
+        uptime, version, is_busy = readout.ping()
+    else:
+        print("Connected to NR0")
+
     print("  Ping")
     print(f"    Firmware {version}")
     print(f"    Uptime   {uptime}s")
@@ -531,7 +550,7 @@ elif(args.port):
 else:
     print("Neither -t nor -p specified. Good luck.")
 
-# List ports    
+# List ports
 if(args.list_ports):
     ports = serial.tools.list_ports.comports()
     port_names = []
@@ -572,7 +591,7 @@ elif(args.read):
                 read_chip_voltages_binary(range(args.start, args.stop, args.step), range(start_address, 2**26, 2**16), location=directory)
             else:
                 read_chip_voltages_csv(range(args.start, args.stop, args.step), range(start_address, 2**26, 2**16), location=directory)
-        
+
 # Erase a sector or entire chip
 elif(args.erase):
     if(args.sector is not None):
