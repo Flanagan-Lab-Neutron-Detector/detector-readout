@@ -9,7 +9,7 @@ import os
 import nisoc_readout as readout_prod
 import nisoc_readout_dummy as readout_test
 
-from argparse import ArgumentParser
+from argparse import ArgumentParser, ArgumentTypeError
 from functools import partial
 
 ###########################
@@ -181,27 +181,67 @@ analog_unit_map_inv = {
     3 : "spare"
 }
 
-def handle_ana_get_cal_counts_nr0():
+def handle_ana_get_cal_counts_nr0(unit: int) -> tuple[float, float]:
     ce_10v_cts, reset_10v_cts, wp_acc_10v_cts, spare_10v_cts = readout.ana_get_cal_counts()
 
     print("  CE 10V Counts:       {}\r\n  Reset 10V Counts:    {}\r\n  WP/Acc 10V Counts:   {}\r\n  Spare 10V Counts:    {}".format(
           ce_10v_cts, reset_10v_cts, wp_acc_10v_cts, spare_10v_cts))
 
-def handle_ana_get_cal_counts_nr1():
-    dac1calc0, dac1calc1 = readout.ana_get_cal_counts(1)
-    dac2calc0, dac2calc1 = readout.ana_get_cal_counts(2)
-    print(f"  Unit 1 {analog_unit_map_inv[1]} C0 = {dac1calc0}, C1 = {dac1calc1}")
-    print(f"  Unit 2 {analog_unit_map_inv[2]} C0 = {dac2calc0}, C1 = {dac2calc1}")
-
-def handle_ana_get_cal_counts():
-    if isinstance(readout, readout_prod.ReadoutNR1):
-        handle_ana_get_cal_counts_nr1()
+    if unit == 0:
+        return 0,ce_10v_cts
+    elif unit == 1:
+        return 0,reset_10v_cts
+    elif unit == 2:
+        return 0,wp_acc_10v_cts
+    elif unit == 3:
+        return 0,spare_10v_cts
     else:
-        handle_ana_get_cal_counts_nr0()
+        raise ValueError(f"Invalid unit {unit}")
 
-def handle_ana_set_cal_counts(ce_10v_cts: int, reset_10v_cts: int, wp_acc_10v_cts: int, spare_10v_cts: int):
+def handle_ana_get_cal_counts_nr1(unit: int) -> tuple[float, float]:
+    if unit == 1 or unit == 2:
+        c0, c1 = readout.ana_get_cal_counts(unit)
+        #print(f"  Unit {unit} {analog_unit_map_inv[2]} C0 = {c0}, C1 = {c1}")
+        return c0, c1
+    else:
+        return None, None
+
+def handle_ana_get_cal_counts(unit: int) -> tuple[float, float]:
+    if isinstance(readout, readout_prod.ReadoutNR1):
+        return handle_ana_get_cal_counts_nr1(unit)
+    else:
+        return handle_ana_get_cal_counts_nr0(unit)
+
+def handle_ana_set_cal_counts_nr0(unit: int, c0: float, c1: float):
+    # Get old values
+    ce_10v_cts, reset_10v_cts, wp_acc_10v_cts, spare_10v_cts = readout.ana_get_cal_counts()
+    # Update unit
+    if unit == 0:
+        ce_10v_cts = c1
+    elif unit == 1:
+        reset_10v_cts = c1
+    elif unit == 2:
+        wp_acc_10v_cts = c1
+    elif unit == 3:
+        spare_10v_cts = c1
+    else:
+        raise ValueError(f"Invalid unit {unit}")
+    # Write back
     readout.ana_set_cal_counts(ce_10v_cts, reset_10v_cts, wp_acc_10v_cts, spare_10v_cts)
     print("  Set cal counts")
+
+def handle_ana_set_cal_counts_nr1(unit: int, c0: float, c1: float):
+    if unit == 1 or unit == 2:
+        readout.ana_set_cal_counts(unit, c0, c1)
+        print(f"  Set unit {unit} {analog_unit_map_inv[unit]} C0 = {c0}, C1 = {c1}")
+    else:
+        print(f"  Invalid unit {unit}")
+
+def handle_ana_set_cal_counts(unit: int, c0: float, c1: float):
+    if isinstance(readout, readout_prod.ReadoutNR1):
+        handle_ana_set_cal_counts_nr1(unit, c0, c1)
+    else:
+        handle_ana_set_cal_counts_nr0(unit, c0, c1)
 
 def handle_ana_set_active_counts(unit: str, counts: int):
     if unit in analog_unit_map:
@@ -428,79 +468,66 @@ def get_bit_noise(sector_address, voltages,iterations):
 # CLI #
 #######
 
+# range-restricted int conversion
+def int_range(x, min: int, max: int, base=10) -> int:
+    x = int(x, base=base)
+    if x < min or x > max:
+        raise ArgumentTypeError(f"{x} must be in range [{min}, {max}]")
+    return x
+
+# positive int conversion
+def int_positive(x, base=10) -> int:
+    x = int(x, base=base)
+    if x < 0:
+        raise ArgumentTypeError(f"{x} must be positive")
+    return x
+
 # CLI spec
 parser = ArgumentParser(description="CLI for chip reads/writes")
 
-parser.add_argument('-lp', '--list-ports', action='store_true', help='list USB port options')
-
 parser.add_argument('-p', '--port', help='the USB port where the chip reader is installed')
-
-parser.add_argument('-r',  '--read', action='store_true', help='read data from the chip')
-parser.add_argument('-c', '--bitcount', action='store_true', help='count bits read as 1 in each sector')
-parser.add_argument('--sector', type=partial(int, base=0), help='the sector of the chip to read')
-parser.add_argument('--sectors', type=partial(int, base=0), nargs='+', help='a list of sectors of the chip to read, i.e. 0 65536 67043328')
-parser.add_argument('--start', type=partial(int, base=0), help='the lowest voltage at which to read the chip in mV')
-parser.add_argument('--stop', type=partial(int, base=0), help='the highest voltage at which to read the chip in mV')
-parser.add_argument('--step', type=partial(int, base=0), help='the granularity in mV')
-parser.add_argument('-a', '--all-sectors', action='store_true', help='read entire chip rather than a single sector')
-parser.add_argument('--start-address', type=partial(int, base=0), help='the lowest sector of the chip to read')
-parser.add_argument('-d', '--directory', help='folder to contain output data files (relative path)')
-
-parser.add_argument('-e', "--erase", action='store_true', help='erase data from the chip (always do this before writing)')
-
-parser.add_argument('-w', '--write', action='store_true', help='write data to the chip')
-parser.add_argument('-v', '--value', type=partial(int, base=0), help='the hex value to store in each byte')
-
-parser.add_argument('--calget', action='store_true', help='print analog calibration values')
-parser.add_argument('--calset', type=partial(int, base=0), help='set analog calibration counts')
-parser.add_argument('--anaset', type=partial(int, base=0), help='set analog output counts')
-parser.add_argument('--unit', type=partial(int, base=0), help='analog unit. 0=CE# 1=RESET# 2=WP# 3=SPARE')
-
-parser.add_argument('--format', type=str, choices=['binary', 'csv'], default='csv', help='select data format')
 
 parser.add_argument('-t', '--test', action='store_true', help='bypass real serial port')
 
+subparsers = parser.add_subparsers(title="command", description="commands", dest='command')
+
+port_parser = subparsers.add_parser('list', help='list serial ports')
+
+read_parser = subparsers.add_parser('read', help='read data from the chip')
+read_parser.add_argument('--address', type=partial(int_positive, base=0), required=True, help='read start address')
+read_parser.add_argument('--sectors', type=partial(int_positive, base=0), required=True, help='number of sectors to read')
+read_parser.add_argument('--start', type=partial(int_positive, base=0), required=True, help='the lowest voltage at which to read the chip in mV')
+read_parser.add_argument('--stop', type=partial(int_positive, base=0), required=True, help='the highest voltage at which to read the chip in mV')
+read_parser.add_argument('--step', type=partial(int_positive, base=0), required=True, help='the granularity in mV')
+read_parser.add_argument('-d', '--directory', required=True, help='folder to contain output data files (relative path)')
+read_parser.add_argument('--format', type=str, choices=['binary', 'csv'], default='csv', help='select data format')
+
+erase_parser = subparsers.add_parser('erase', help='erase by sector]')
+erase_parser.add_argument('--address', type=partial(int_positive, base=0), required=True, help='erase start address')
+erase_parser.add_argument('--sectors', type=partial(int_positive, base=0), required=True, help='number of sectors to erase')
+
+erase_chip_parser = subparsers.add_parser('erase-chip', help='erase entire chip')
+
+write_parser = subparsers.add_parser('write', help='write data to the chip')
+write_parser.add_argument('--address', type=partial(int_positive, base=0), required=True, help='write start address')
+write_parser.add_argument('--sectors', type=partial(int_positive, base=0), required=True, help='number of sectors to write')
+write_parser.add_argument('-v', '--value', type=partial(int_range, min=0, max=65535, base=0), required=True, help='the value to store in each word')
+
+write_chip_parser = subparsers.add_parser('write-chip', help='write data to the entire chip')
+write_chip_parser.add_argument('-v', '--value', type=partial(int_range, min=0, max=65535, base=0), required=True, help='the value to store in each word')
+
+dac_parser = subparsers.add_parser('dac', help='DAC management')
+dac_subparsers = dac_parser.add_subparsers(title="DAC commands", description="DAC commands", required=True, dest='dac_command')
+dac_calget_parser = dac_subparsers.add_parser('get-calibration', help='get DAC calibration values')
+dac_calset_parser = dac_subparsers.add_parser('set-calibration', help='set DAC calibration values')
+dac_calset_parser.add_argument('unit', type=int, choices=[0, 1, 2, 3], help='DAC unit')
+dac_calset_parser.add_argument('--c0', type=float, required=True, help='Calibration C0 (offset) value')
+dac_calset_parser.add_argument('--c1', type=float, required=True, help='Calibration C1 (gain) value')
+dac_activeset_parser = dac_subparsers.add_parser('set-active', help='set DAC active values')
+dac_activeset_parser.add_argument('unit', type=int, choices=[0, 1, 2, 3], help='DAC unit')
+dac_activeset_parser.add_argument('value', type=int_positive, help='Active value')
+
 args = parser.parse_args()
-
-
-# Some nice argument handling to flag problems
-if (args.sector and args.all_sectors) or (args.sector and args.sectors) or (args.sectors and args.all_sectors):
-    parser.error("--sector, --sectors, and --all-sectors are incompatible")
-
-if (args.read or args.write or args.erase) and not (args.port or args.test):
-    parser.error("--read, --write, and --erase always require --port \n"
-                 "use --list-ports to see a list of available usb ports")
-
-if args.read and ((args.sector is None and not args.sectors and not args.all_sectors) or args.start is None or args.stop is None or args.step is None):
-    parser.error("--read requires --sector or --sectors or all-sectors, --start, --stop, and --step \n"
-                 "suggested test values are --sector 800000 --start 2000 --stop 7000 --step 1000")
-
-if args.write and ((args.sector is None and not args.sectors and not args.all_sectors) or args.value is None):
-    parser.error("--write requires --value and --sector or --sectors or --all-sectors \n"
-                 "suggested test values are --sector 800000 --value 0x5555")
-
-if args.erase and (args.sector is None and not args.all_sectors):
-    parser.error("--erase requires --sector or --all-sectors \n"
-                 "suggested test value is --sector 800000")
-
-if args.start_address and not (args.all_sectors and args.read):
-    parser.error("--start-address may only be used in conjunction with --read and --all-sectors")
-
-if args.sectors and not (args.read or args.write):
-    parser.error('--sectors may only be used in conjunction with --read or --write')
-
-if args.anaset is not None and args.unit is None:
-    parser.error('--anaset requires --unit [0-3]')
-if args.anaset is not None and (args.anaset < 0 or args.anaset > 4095):
-    parser.error('--anaset counts must be > 0 and < 4096')
-
-if args.calset is not None and args.unit is None:
-    parser.error('--calset requires --unit [0-3]')
-if args.calset is not None and (args.calset < 0 or args.calset > 4095):
-    parser.error('--calset counts must be > 0 and < 4096')
-
-if args.unit is not None and (args.unit < 0 or args.unit > 3):
-    parser.error('--unit must be > 0 and < 4')
 
 # Serial read/write
 class SerialTimeoutError(Exception):
@@ -551,7 +578,7 @@ else:
     print("Neither -t nor -p specified. Good luck.")
 
 # List ports
-if(args.list_ports):
+if args.command == 'list':
     ports = serial.tools.list_ports.comports()
     port_names = []
     for port, desc, hwid in sorted(ports):
@@ -560,100 +587,61 @@ if(args.list_ports):
         print(name)
 
 # Read a sector or entire chip
-elif(args.read):
-    if(args.directory):
+elif args.command == 'read':
+    if(args.directory and not os.path.exists(args.directory)):
         os.mkdir(args.directory)
     directory = args.directory if args.directory else '.'
     print(directory)
 
-    if(args.sector is not None):
-        if (args.bitcount):
-            count_chip_bits(range(args.start, args.stop, args.step), [args.sector], location=directory)
-        else:
-            if args.format == 'binary':
-                read_chip_voltages_binary(range(args.start, args.stop, args.step), [args.sector], location=directory)
-            else:
-                read_chip_voltages_csv(range(args.start, args.stop, args.step), [args.sector], location=directory)
-    elif(args.sectors):
-        if (args.bitcount):
-            count_chip_bits(range(args.start, args.stop, args.step), args.sectors, location=directory)
-        else:
-            if args.format == 'binary':
-                read_chip_voltages_binary(range(args.start, args.stop, args.step), args.sectors, location=directory)
-            else:
-                read_chip_voltages_csv(range(args.start, args.stop, args.step), args.sectors, location=directory)
-    elif(args.all_sectors):
-        start_address = args.start_address if args.start_address else 0
-        if (args.bitcount):
-            count_chip_bits(range(args.start, args.stop, args.step), range(start_address, 2**26, 2**16), location=directory)
-        else:
-            if args.format == 'binary':
-                read_chip_voltages_binary(range(args.start, args.stop, args.step), range(start_address, 2**26, 2**16), location=directory)
-            else:
-                read_chip_voltages_csv(range(args.start, args.stop, args.step), range(start_address, 2**26, 2**16), location=directory)
+    voltage_range = range(args.start, args.stop, args.step)
+    sector_range = range(args.address, args.address + args.sectors*2**16, 2**16)
+    if args.format == 'binary':
+        read_chip_voltages_binary(voltage_range, sector_range, location=directory)
+    else:
+        read_chip_voltages_csv(voltage_range, sector_range, location=directory)
 
-# Erase a sector or entire chip
-elif(args.erase):
-    if(args.sector is not None):
-        handle_erase_sector(args.sector)
-    elif(args.all_sectors):
-        handle_erase_chip()
+# Erase whole chip
+elif args.command == 'erase-chip':
+    handle_erase_chip()
 
-# Write a sector or entire chip
-elif(args.write):
-    if(args.sector is not None):
-        handle_program_sector(args.sector, args.value)
-    elif(args.sectors):
-        for sector in args.sectors:
-            handle_program_sector(args.sector, args.value)
-    elif(args.all_sectors):
-        try:
-            handle_program_chip(args.value)
-        except SerialTimeoutError as te:
-            print("Writing a chip takes about 30 minutes and will continue despite the serial error that causes this macro to abort. Please wait until the chip stops flashing.")
-            print(te)
-        except Exception as e:
-            print(f"Got unexpected exception when programming chip: {e}")
+# Erase sectors
+elif args.command == 'erase':
+    sector_range = range(args.address, args.address + args.sectors*2**16, 2**16)
+    for sector in sector_range:
+        handle_erase_sector(sector)
+
+# Write entire chip
+elif args.command == 'write-chip':
+    try:
+        handle_program_chip(args.value)
+    except SerialTimeoutError as te:
+        print("Writing a chip takes about 30 minutes and will continue despite the serial error that causes this macro to abort. Please wait until the chip stops flashing.")
+        print(te)
+    except Exception as e:
+        print(f"Got unexpected exception when programming chip: {e}")
+
+# Write sectors
+elif args.command == 'write':
+    sector_range = range(args.address, args.address + args.sectors*2**16, 2**16)
+    for sector in sector_range:
+        handle_program_sector(sector, args.value)
 
 # Print calibration counts
-elif(args.calget):
-    handle_ana_get_cal_counts()
-elif(args.calset):
-    # counts and unit are verified above
-    # print pre
-    print("  Old calibration counts:")
-    ce_10v_cts, reset_10v_cts, wp_acc_10v_cts, spare_10v_cts = readout.ana_get_cal_counts()
-    print("    CE 10V Counts:       {}\r\n    Reset 10V Counts:    {}\r\n    WP/Acc 10V Counts:   {}\r\n    Spare 10V Counts:    {}".format(
-          ce_10v_cts, reset_10v_cts, wp_acc_10v_cts, spare_10v_cts))
+elif args.command == 'dac' and args.dac_command == 'get-calibration':
+    for unit in range(4):
+        c0, c1 = handle_ana_get_cal_counts(unit)
+        print(f"  DAC unit {unit} ({analog_unit_map_inv[unit]}): C0 = {c0}, C1 = {c1}")
 
-    # set counts for this unit
-    if args.unit == 0:
-        print(f"  Set CE# 10V cal counts to {args.calset}")
-        ce_10v_cts = args.calset
-    elif args.unit == 1:
-        print(f"  Set RESET# 10V cal counts to {args.calset}")
-        reset_10v_cts = args.calset
-    elif args.unit == 2:
-        print(f"  Set WP/ACC# 10V cal counts to {args.calset}")
-        wp_acc_10v_cts = args.calset
-    elif args.unit == 3:
-        print(f"  Set SPARE# 10V cal counts to {args.calset}")
-        spare_10v_cts = args.calset
-    else:
-        print("UNKNOWN UNIT")
-    readout.ana_set_cal_counts(ce_10v_cts, reset_10v_cts, wp_acc_10v_cts, spare_10v_cts)
+elif args.command == 'dac' and args.dac_command == 'set-calibration':
+    # Get old calibration
+    old_c0, old_c1 = handle_ana_get_cal_counts(args.unit)
 
-    time.sleep(0.01)
-    print("  New calibration counts:")
-    ce_10v_cts, reset_10v_cts, wp_acc_10v_cts, spare_10v_cts = readout.ana_get_cal_counts()
-    print("    CE 10V Counts:       {}\r\n    Reset 10V Counts:    {}\r\n    WP/Acc 10V Counts:   {}\r\n    Spare 10V Counts:    {}".format(
-          ce_10v_cts, reset_10v_cts, wp_acc_10v_cts, spare_10v_cts))
-
-# TODO: set calibration counts
+    # Set new calibration
+    handle_ana_set_cal_counts(args.unit, args.c0, args.c1)
 
 # Set analog output
-elif(args.anaset is not None):
+elif args.command == 'dac' and args.dac_command == 'set-active':
     # counts and unit are verified above
-    readout.ana_set_active_counts(args.unit, args.anaset)
-    print(f"  Set unit {args.unit} ({analog_unit_map_inv[args.unit]}) counts to {args.anaset}")
+    readout.ana_set_active_counts(args.unit, args.value)
+    print(f"  Set unit {args.unit} ({analog_unit_map_inv[args.unit]}) counts to {args.value}")
 
