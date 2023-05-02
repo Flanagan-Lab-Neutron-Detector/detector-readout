@@ -1,5 +1,7 @@
 """This module implements the serial communications protocol used by NR0 ('HPT readout')."""
 
+from typing import Callable
+from collections.abc import Sequence
 import crcmod
 import struct
 
@@ -16,7 +18,8 @@ CRC_XOR_OUT = 0
 # Calculate CRC for a collection of values. Signature is crc_f(vals, init_crc). The device reverses each 4-byte chunk.
 crc_f = crcmod.mkCrcFun(CRC_POLY, rev=False, initCrc=CRC_SEED, xorOut=CRC_XOR_OUT)
 
-def crc_4(arr, start=CRC_SEED):
+def crc_4(arr: Sequence, start=CRC_SEED):
+	"""Calculate CRC for elements in arr in 4-byte chunks, with initial value."""
 	crc = start
 	i = 0
 	while i < len(arr):
@@ -72,8 +75,8 @@ MSG_NAMES = {
 MSG_IDS = { MSG_NAMES[msg_id]: msg_id for msg_id in MSG_NAMES }
 
 def _validate_msg(header: bytearray, data: bytearray, exp_id: int) -> bool:
+	# Validate header
 	start_char, length, id = struct.unpack_from("<BHB", header, 0)
-
 	if start_char != 0x7E:
 		raise MessageValidationError("Wrong start char {}".format(hex(start_char)))
 	if len(data) < (length-4):
@@ -81,15 +84,15 @@ def _validate_msg(header: bytearray, data: bytearray, exp_id: int) -> bool:
 	if id != exp_id:
 		raise MessageValidationError("Expected message ID {}. Got Message ID {} ({})".format(exp_id, id, MSG_NAMES[id] if id in MSG_NAMES else "unknown message"))
 
+	# Validate CRC
 	msg_crc, = struct.unpack_from("<I", data, length-4-4)
 	crc = crc_4(header)
 	crc = crc_4(data[0:length-4-4], crc)
-
 	if msg_crc != crc:
 		raise MessageValidationError("Message crc {} != calc crc {} for message {} ({})".format(hex(msg_crc), hex(crc), id, MSG_NAMES[id] if id in MSG_NAMES else "unknown message"))
 	return True
 
-def _read_rsp(readfunc, rsp_id: int) -> bytes:
+def _read_rsp(readfunc: Callable[[int], bytes], rsp_id: int) -> bytes:
 	rsp_header = readfunc(4)
 	msg_len, = struct.unpack_from("<H", rsp_header, 1)
 	rsp_data = readfunc(msg_len - 4)
@@ -106,10 +109,12 @@ def _insert_crc(data: bytearray) -> None:
 	struct.pack_into("<I", data, len(data)-4, crc)
 
 class Readout:
-	readfunc = None
-	writefunc = None
+	# The function used to read data from the readout
+	readfunc: Callable[[int], bytes] = None
+	# The function used to write data to the readout
+	writefunc: Callable[[bytes], None] = None
 
-	def __init__(self, readfunc, writefunc):
+	def __init__(self, readfunc: Callable[[int], bytes], writefunc: Callable[[bytes], None]):
 		self.readfunc = readfunc
 		self.writefunc = writefunc
 
@@ -191,7 +196,7 @@ class Readout:
 
 		return bits_set
 
-	def read_data(self, base_address, vt_mode: bool=False, read_mv: int=4000) -> bytearray:
+	def read_data(self, base_address: int, vt_mode: bool=False, read_mv: int=4000) -> bytearray:
 		cmd_len = 20
 		#rsp_len = 1032
 		cmd_data = _make_cmd(cmd_len, MSG_IDS['cmd_read_data'])
