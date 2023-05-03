@@ -35,19 +35,19 @@ log "Stop:    $mv_stop mV"
 log "Step:    $mv_step mV"
 
 log "Erase all sectors"
-python3 Neutron_CLI.py --p $port -e --all-sectors
+python3 Neutron_CLI.py -p $port erase-chip
 
 log "Erase delay 10m"
 sleep 10m # delay to allow the chip to erase
 
 log "Program device"
-python3 Neutron_CLI.py --p $port -w -v 0 --all-sectors
+python3 Neutron_CLI.py -p $port write-chip -v 0
 
 log "Program delay 1h"
 sleep 1h # delay to allow the device to write and then settle
 
 log "Writing to $savedir"
 log "Read all sectors in range [$mv_start, $mv_stop) mV in steps of $mv_step mV"
-python3 Neutron_CLI.py --p $port -r --all-sectors --start $mv_start --stop $mv_stop --step $mv_step -d $savedir
+python3 Neutron_CLI.py -p $port read --address 0 --sectors 1024 --start $mv_start --stop $mv_stop --step $mv_step -d $savedir --format=binary
 
 log "Complete!"
