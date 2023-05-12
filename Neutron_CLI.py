@@ -582,9 +582,7 @@ if args.command == 'list':
     ports = serial.tools.list_ports.comports()
     port_names = []
     for port, desc, hwid in sorted(ports):
-        port_names.append(port)
-    for name in port_names:
-        print(name)
+        print(port, desc)
 
 # Read a sector or entire chip
 elif args.command == 'read':
