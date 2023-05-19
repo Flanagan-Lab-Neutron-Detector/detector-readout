@@ -525,7 +525,7 @@ dac_calset_parser.add_argument('--c0', type=float, required=True, help='Calibrat
 dac_calset_parser.add_argument('--c1', type=float, required=True, help='Calibration C1 (gain) value')
 dac_activeset_parser = dac_subparsers.add_parser('set-active', help='set DAC active values')
 dac_activeset_parser.add_argument('unit', type=int, choices=[0, 1, 2, 3], help='DAC unit')
-dac_activeset_parser.add_argument('value', type=int_positive, help='Active value')
+dac_activeset_parser.add_argument('value', type=partial(int_positive, base=0), help='Active value')
 
 args = parser.parse_args()
 
