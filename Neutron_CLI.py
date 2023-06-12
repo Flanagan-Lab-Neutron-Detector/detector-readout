@@ -500,7 +500,7 @@ read_parser.add_argument('--start', type=partial(int_positive, base=0), required
 read_parser.add_argument('--stop', type=partial(int_positive, base=0), required=True, help='the highest voltage at which to read the chip in mV')
 read_parser.add_argument('--step', type=partial(int_positive, base=0), required=True, help='the granularity in mV')
 read_parser.add_argument('-d', '--directory', required=True, help='folder to contain output data files (relative path)')
-read_parser.add_argument('--format', type=str, choices=['binary', 'csv'], default='csv', help='select data format')
+read_parser.add_argument('--format', type=str, choices=['binary', 'csv'], default='binary', help='select data format')
 
 erase_parser = subparsers.add_parser('erase', help='erase by sector]')
 erase_parser.add_argument('--address', type=partial(int_positive, base=0), required=True, help='erase start address')
