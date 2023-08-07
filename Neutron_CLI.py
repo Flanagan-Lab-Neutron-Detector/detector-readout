@@ -312,7 +312,7 @@ def read_chip_voltages_binary(voltages, sectors, location='.'):
             printProgressBar(count, len(voltages)*128*len(sectors), prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
             #mem = [new_handle_read_data(address, j, 1, 0)
             #       for _,address in enumerate(range(base_address, base_address + 65024 + 512, 512))]
-            with open(os.path.join(location, f"data-{j}.bin"), 'ab') as f:
+            with open(os.path.join(location, f"data-{j}-{base_address}.bin"), 'ab') as f:
                 for block in mem:
                     f.write(block)
     print()
