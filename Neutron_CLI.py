@@ -69,26 +69,6 @@ def handle_none(_port, _args):
 
 def handle_vt_get_bit_count_kpage(port, base_address,read_mv):
     print("TODO(aidan): make this work")
-
-    # cmd_len = 16
-    # rsp_len = 1032
-    # cmd_data = make_cmd(cmd_len, 6)
-    # struct.pack_into("<II", cmd_data, 4, base_address, read_mv)
-    # insert_crc(cmd_data)
-
-    # port.write(cmd_data)
-    # rsp_data = read_rsp(port, rsp_len, 7)
-
-
-    # if len(rsp_data) >= rsp_len:
-    #     array = np.frombuffer(rsp_data[4:-4], dtype=np.uint8)  # or dtype=np.dtype('<f4')
-    #     bitarray = np.unpackbits(array)#np.unpackbits(array.view(np.uint8))
-
-    #     NDarray = np.reshape(bitarray, (1024, 8))   #np.reshape(bitarray, (512, 16)) #if we are reading 16 bit words
-
-    # else:
-    #     return False
-    #return NDarray
     return False
 
 def handle_erase_chip():
@@ -137,35 +117,6 @@ def handle_read_data(address, read_mv, vt, bit_mode):
     else:
         NDarray = np.reshape(bitarray, (512, 16))
         return NDarray
-
-    # Original for posterity
-
-    # if len(rsp_data) >= rsp_len:
-    #     array = np.frombuffer(rsp_data[4:-4], dtype=np.uint16)  # or dtype=np.dtype('<f4')
-    #     bitarray = np.unpackbits(array.view(np.uint8))
-    #     NDarray = np.reshape(bitarray, (512, 16))
-    #     if(current_iter > 1):
-    #         print(f"Read successful on attempt {current_iter}")
-    #      #if we are reading 16 bit words
-    #     # for line in range(32):
-    #     #      print("  {:08X}    {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X}".format(base_address + 16*line,
-    #     #                                                                                                                                                 rsp_data[4+16*line + 0], rsp_data[4+16*line + 1], rsp_data[4+16*line + 2], rsp_data[4+16*line + 3],
-    #     #                                                                                                                                                 rsp_data[4+16*line + 4], rsp_data[4+16*line + 5], rsp_data[4+16*line + 6], rsp_data[4+16*line + 7],
-    #     #                                                                                                                                                 rsp_data[4+16*line + 8], rsp_data[4+16*line + 8], rsp_data[4+16*line + 8], rsp_data[4+16*line + 9],
-    #     #                                                                                                                                                 rsp_data[4+16*line + 12], rsp_data[4+16*line + 13], rsp_data[4+16*line + 14], rsp_data[4+16*line + 15]))
-    #     # #print(read_mv,sum(bitarray))
-    # else:
-    #     # repeat call
-    #     if current_iter > max_repeats:
-    #         print(f"Unable to read after {max_repeats} attempts. Skipping.")
-    #         return 0 if bit_mode else np.full((512, 16),2,dtype=np.uint8)
-    #     else:
-    #         print(f"Repeating call to read data at address {address}. Attempt #{current_iter} failed.")
-    #         return handle_read_data(port, address,read_mv,vt,bit_mode, max_repeats=max_repeats, current_iter=current_iter+1)
-    # if bit_mode:
-    #     return sum(bitarray)
-    # else:
-    #     return NDarray
 
 analog_unit_map = {
     "ce" : 0,
@@ -285,9 +236,6 @@ def read_chip_voltages_binary(voltages, sectors, location='.'):
     printProgressBar(0, len(voltages)*128*len(sectors), prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
     for _, base_address in enumerate(sectors):
         for _, j in enumerate(voltages):
-            #mem = [bytearray() for _ in range(128)]
-            #for idx, address in enumerate(range(base_address, base_address + 65024 + 512, 512)):
-            #    mem[idx] = handle_read_data(address, j, 1, 0)
             addr_range = range(base_address, base_address + 65024 + 512, 512)
             mem: list[bytearray] = [bytearray()]*len(addr_range)
             for i,address in enumerate(addr_range):
@@ -310,8 +258,6 @@ def read_chip_voltages_binary(voltages, sectors, location='.'):
                 mem[i] = data
                 count+=1
             printProgressBar(count, len(voltages)*128*len(sectors), prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
-            #mem = [new_handle_read_data(address, j, 1, 0)
-            #       for _,address in enumerate(range(base_address, base_address + 65024 + 512, 512))]
             with open(os.path.join(location, f"data-{j}-{base_address}.bin"), 'ab') as f:
                 for block in mem:
                     f.write(block)
@@ -369,54 +315,6 @@ def count_chip_bits(voltages, sectors, location='.'):
             for i in range(len(sectors)):
                 f.write(f"0x{sectors[i]:X}, {counts[i]:d}\n")
     print()
-
-# ## No longer used
-# def get_voltage_sweep(port,base_address,voltages,method):
-#     if not method:
-#         values = []
-#         tracker = 0
-#         printProgressBar(0, len(voltages)*128, prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
-#         for idx1,j in enumerate(voltages):
-#             temp = []
-#             for idx, address in enumerate(range(base_address, base_address + 65024 + 512, 512)):
-#                 NDarray = handle_read_data(port, address, j,1,1)
-#                 if not isinstance(NDarray,bool):
-#                     temp.append(NDarray)
-#                 printProgressBar(tracker+1, len(voltages)*128, prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
-#                 tracker+=1
-#             values.append([j, sum(temp)])
-
-#         v = [x[0] for x in values]
-#         bits = [x[1] for x in values]
-#     else:
-#         bits = []
-#         v = voltages
-#         printProgressBar(0, len(voltages), prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
-#         for idx, j in enumerate(voltages):
-#             bit_count = handle_get_sector_bit_count(port,base_address,read_mv=j)
-#             bits.append(bit_count)
-#             time.sleep(.003)
-#             printProgressBar(idx, len(voltages), prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
-#     if plt.fignum_exists(1):
-#         ax1 = plt.figure(1).axes[0]
-#         ax2 = plt.figure(1).axes[1]
-#     else:
-#         fig1 = plt.figure(1)
-#         ax1 = fig1.gca()
-#         ax1.set_xlabel('Voltage (mV)')
-#         ax1.set_ylabel('Counts')
-#         ax2 = ax1.twinx()
-#         ax2.set_ylabel('Sector Dist.')
-#     #print("v: ")
-#     #print(v)
-#     #print("bits: ")
-#     #print(bits)
-#     ax1.plot(v, bits, label='Sector: {}'.format(base_address))
-#     ax2.plot(v[1:], np.diff(bits), '--', label='Sector Dist.: {}, {}'.format(base_address, voltages[2] - voltages[1]))
-#     ax2.legend(loc='best')
-#     ax1.legend(loc='best')
-#     plt.show()
-#     return
 
 def get_bit_noise(sector_address, voltages,iterations):
     max = iterations
