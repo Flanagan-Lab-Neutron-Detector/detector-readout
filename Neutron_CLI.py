@@ -6,8 +6,7 @@ import numpy as np
 import time
 import os
 
-import nisoc_readout as readout_prod
-import nisoc_readout_dummy as readout_test
+import nisoc_readout as nisoc_readout
 
 from argparse import ArgumentParser, ArgumentTypeError
 from functools import partial
@@ -158,7 +157,7 @@ def handle_ana_get_cal_counts_nr1(unit: int) -> tuple[float, float]:
         return None, None
 
 def handle_ana_get_cal_counts(unit: int) -> tuple[float, float]:
-    if isinstance(readout, readout_prod.ReadoutNR1):
+    if isinstance(readout, nisoc_readout.ReadoutNR1):
         return handle_ana_get_cal_counts_nr1(unit)
     else:
         return handle_ana_get_cal_counts_nr0(unit)
@@ -189,7 +188,7 @@ def handle_ana_set_cal_counts_nr1(unit: int, c0: float, c1: float):
         print(f"  Invalid unit {unit}")
 
 def handle_ana_set_cal_counts(unit: int, c0: float, c1: float):
-    if isinstance(readout, readout_prod.ReadoutNR1):
+    if isinstance(readout, nisoc_readout.ReadoutNR1):
         handle_ana_set_cal_counts_nr1(unit, c0, c1)
     else:
         handle_ana_set_cal_counts_nr0(unit, c0, c1)
@@ -449,9 +448,9 @@ ser: serial.Serial = None
 readout = None
 if(args.test):
     print("Running in Test Mode")
-    readout = readout_test.Readout(ser_read, ser_write)
+    readout = nisoc_readout.ReadoutDummy(ser_read, ser_write)
 elif(args.port):
-    readout = readout_prod.ReadoutNR0(ser_read, ser_write)
+    readout = nisoc_readout.ReadoutNR0(ser_read, ser_write)
     print("Checking status of port " + args.port)
     try:
         ser = serial.Serial(args.port, 115200, bytesize = serial.EIGHTBITS,stopbits =serial.STOPBITS_ONE, parity  = serial.PARITY_NONE,timeout=1)
@@ -463,7 +462,7 @@ elif(args.port):
 
     if version == "NR1 test":
         print("Connected to NR1 prototype")
-        readout = readout_prod.ReadoutNR1(ser_read, ser_write)
+        readout = nisoc_readout.ReadoutNR1(ser_read, ser_write)
         uptime, version, is_busy = readout.ping()
     else:
         print("Connected to NR0")
