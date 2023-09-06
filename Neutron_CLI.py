@@ -96,26 +96,36 @@ def new_handle_read_data(address, read_mv, vt):
     vt_mode = True if vt is not None else False
     read_mv = read_mv if vt_mode else 0
 
-    data = readout.read_data(address, vt_mode, read_mv)
+    # Read data
+    # Re-raise any exceptions with address and voltage information
+
+    try:
+        data = readout.read_data(address, vt_mode, read_mv)
+    except Exception as e:
+        raise Exception("Exception in read_data at {address:X}h @ {read_mv} mV.") from e
     return data
 
 def handle_read_data(address, read_mv, vt, bit_mode):
     vt_mode = True if vt is not None else False
     read_mv = read_mv if vt_mode else 0
 
-    # Original adapted for read_data call.
-    # I don't know what this is doing or why.
-    # Removed repeat loop. Callers should catch exceptions
+    # Read data, unpack bits, reshape
+    # If bit_mode, count the number of bits set (sum the bits)
+    # Re-raise any exceptions with address and voltage information
 
-    data = readout.read_data(address, vt_mode, read_mv)
+    ret = None
+    try:
+        data = readout.read_data(address, vt_mode, read_mv)
+        array = np.frombuffer(data, dtype=np.uint16)  # or dtype=np.dtype('<f4')
+        bitarray = np.unpackbits(array.view(np.uint8))
+        if bit_mode:
+            ret = sum(bitarray)
+        else:
+            ret = np.reshape(bitarray, (512, 16))
+    except Exception as e:
+        raise Exception("Exception at {address:X}h @ {read_mv} mV.") from e
 
-    array = np.frombuffer(data, dtype=np.uint16)  # or dtype=np.dtype('<f4')
-    bitarray = np.unpackbits(array.view(np.uint8))
-    if bit_mode:
-        return sum(bitarray)
-    else:
-        NDarray = np.reshape(bitarray, (512, 16))
-        return NDarray
+    return ret
 
 analog_unit_map = {
     "ce" : 0,
@@ -205,74 +215,64 @@ def handle_ana_set_active_counts(unit: str, counts: int):
 # Analysis routines #
 #####################
 
-# One sectors is 64kword of data = 128kB
+# One sector is 64kword of data = 128kB
 # So we need voltages * len(sectors) * 128k of storage
 
-def read_chip_voltages_binary(voltages, sectors, location='.'):
+def retry(retries, f, *args, **kwargs):
+    ret = None
+    while retries > 0:
+        try:
+            ret = f(*args, **kwargs)
+            break
+        except Exception as e:
+            print(f"\n\nException. Retrying: {e}")
+            if retries == 1:
+                print("\nRetries exceeded.")
+                raise e
+        finally:
+            retries -= 1
+    return ret
+
+def read_sector_bin(mv, sa, location):
+    # read 512-word (1024-byte) chunks
+    addr_range = range(sa, sa + 65024 + 512, 512)
+    mem: list[bytearray] = [bytearray()]*len(addr_range)
+    for i,address in enumerate(addr_range):
+        #mem[i] = read_chunk_retries_bin(mv, address, retries=3)
+        mem[i] = retry(3, new_handle_read_data, address, mv, True)
+    # write sector-voltage data to disk
+    with open(os.path.join(location, f"data-{mv}-{sa}.bin"), 'ab') as f:
+        for block in mem:
+            f.write(block)
+
+def read_sector_csv(mv, sa, location):
+    saved_array = np.zeros((512,16))
+    for idx, address in enumerate(range(sa, sa + 65024 + 512, 512)):
+        #NDarray = read_chunk_retries_csv(mv, address, retries=3)
+        NDarray = retry(3, handle_read_data, mv, address, 1, 0)
+        if idx == 0:
+            saved_array = NDarray
+        else:
+            saved_array = np.vstack((saved_array,NDarray))
+    np.savetxt(os.path.join(location, f"data-{mv}-{sa}.csv"), saved_array, fmt='%d', delimiter='')
+
+# read voltage from the chip
+def read_chip_voltages(voltages, sectors, location='.', csv=False):
+    # Progress bar
     count = 1
-    printProgressBar(0, len(voltages)*128*len(sectors), prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
+    printProgressBar(0, len(voltages)*len(sectors), prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
+
+    # Loop through sector base addresses
     for _, base_address in enumerate(sectors):
-        for _, j in enumerate(voltages):
-            addr_range = range(base_address, base_address + 65024 + 512, 512)
-            mem: list[bytearray] = [bytearray()]*len(addr_range)
-            for i,address in enumerate(addr_range):
-                #print(f"\n[read_chip_voltages_binary] Reading {base_address:X} + {address-base_address:X} @ {j} mV")
-                data = []
-                retries = 3
-                while retries > 0:
-                    try:
-                        data = new_handle_read_data(address, j, True)
-                        break
-                    except Exception as e:
-                        print(f"\n\nException in read_chip_voltages at {address} @ {j} mV: {e}\n")
-                    finally:
-                        retries -= 1
-                if retries == 0:
-                    print("\nRetries exceeded. Exiting.")
-                    exit(1)
-
-                #mem.append(data)
-                mem[i] = data
-                count+=1
-            printProgressBar(count, len(voltages)*128*len(sectors), prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
-            with open(os.path.join(location, f"data-{j}-{base_address}.bin"), 'ab') as f:
-                for block in mem:
-                    f.write(block)
+        # Loop through read voltages
+        for _, mv in enumerate(voltages):
+            if csv:
+                read_sector_csv(mv, base_address, location)
+            else:
+                read_sector_bin(mv, base_address, location)
+            count+=1
+            printProgressBar(count, len(voltages)*len(sectors), prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
     print()
-
-def read_chip_voltages_csv(voltages, sectors, location='.'):
-    count = 1
-    printProgressBar(0, len(voltages)*128*len(sectors), prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
-    for idx2, base_address in enumerate(sectors):
-        for idx1, j in enumerate(voltages):
-            saved_array = np.zeros((512,16))
-            for idx, address in enumerate(range(base_address, base_address + 65024 + 512, 512)):
-                NDarray = None
-
-                retries = 3
-                while retries > 0:
-                    try:
-                        NDarray = handle_read_data(address, j, 1, 0)
-                        break
-                    except Exception as e:
-                        print(f"Exception in read_chip_voltages at {address} @ {j} mV: {e}")
-                    finally:
-                        retries -= 1
-                if retries == 0:
-                    print("Retries exceeded. Exiting")
-                    exit(1)
-
-                if idx == 0:
-                    saved_array = NDarray
-                else:
-                    saved_array = np.vstack((saved_array,NDarray))
-                    #print(saved_array)
-                printProgressBar(count, len(voltages)*128*len(sectors), prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
-                count+=1
-            np.savetxt(os.path.join(location,"data-{}-{}.csv".format(j,base_address)), saved_array, fmt='%d', delimiter='')
-
-    print()
-    return
 
 #######
 # CLI #
@@ -404,9 +404,9 @@ elif args.command == 'read':
     voltage_range = range(args.start, args.stop, args.step)
     sector_range = range(args.address, args.address + args.sectors*2**16, 2**16)
     if args.format == 'binary':
-        read_chip_voltages_binary(voltage_range, sector_range, location=directory)
+        read_chip_voltages(voltage_range, sector_range, location=directory)
     else:
-        read_chip_voltages_csv(voltage_range, sector_range, location=directory)
+        read_chip_voltages(voltage_range, sector_range, location=directory, csv=True)
 
 # Erase whole chip
 elif args.command == 'erase-chip':
