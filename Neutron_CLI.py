@@ -205,28 +205,6 @@ def handle_ana_set_active_counts(unit: str, counts: int):
 # Analysis routines #
 #####################
 
-
-def hex_int(x):
-    return int(x, 16)
-
-
-def rev_b_get_dac_code(mv):
-    # Dac is 12-bit 0V-3.3V with an amplifier with G = 7.667
-    # dac output = code * 3.3/4095
-    # amp output = dac * 7.667
-    # mv = G * (code/4095) * 3.3V   =>   code = 4095 * mv/(G*3.3V)
-    return 4095 * int(mv/(7.667*3.3))
-    #gain = 10/1627*4095/3.3
-    #return int(mv/gain*4095/3.3)
-
-def rev_b_get_mv(dac_code):
-    # Dac is 12-bit 0V-3.3V with an amplifier with G = 7.667
-    # dac output = code * 3.3/4095
-    # amp output = dac * 7.667
-    return 7.667 * float(dac_code/4095) * 3.3
-    #gain = 10/1627*4095/3.3
-    #return float(gain*3.3/4095*dac_code)
-
 # One sectors is 64kword of data = 128kB
 # So we need voltages * len(sectors) * 128k of storage
 
@@ -295,71 +273,6 @@ def read_chip_voltages_csv(voltages, sectors, location='.'):
 
     print()
     return
-
-def count_chip_bits(voltages, sectors, location='.'):
-    progress_count = 1
-    printProgressBar(0, len(voltages)*len(sectors), prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
-    for _, voltage in enumerate(voltages):
-        counts: list[int] = []
-        #print(f"{voltage}mV")
-        #print("SectorAddress, Count")
-        for _, base_address in enumerate(sectors):
-            count = readout.get_sector_bit_count(base_address, voltage)
-            counts.append(count)
-            #print(f"0x{base_address:X}, {count:d}")
-            printProgressBar(progress_count, len(voltages)*len(sectors), prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
-            progress_count+=1
-        with open(os.path.join(location,"counts-{}.csv".format(voltage)), 'w') as f:
-            f.write("SectorAddress, Count\n")
-            for i in range(len(sectors)):
-                f.write(f"0x{sectors[i]:X}, {counts[i]:d}\n")
-    print()
-
-def get_bit_noise(sector_address, voltages,iterations):
-    max = iterations
-    real_count = 0
-    n_bins = int((voltages[-1]-voltages[0])/10)
-    step = voltages[2]-voltages[1]
-    results_matrix = []
-    bar = 0
-    for i in range(max):
-        data_matrix = []
-        for idx,j in enumerate(voltages):
-            #print(idx,i,j)
-            NDarray = handle_read_data(sector_address, j,1,0)
-            if not isinstance(NDarray,bool):
-                data_matrix.append([j,NDarray])
-                # vgrad = np.gradient(NDarray)
-                # xgrad = vgrad[0]
-                # x, y = range(0, xgrad.shape[0]), range(0, xgrad.shape[1])
-                # #xi, yi = np.meshgrid(x, y)
-                #rbf = scipy.interpolate.Rbf(xi, yi, xgrad)
-                # hf = plt.figure()
-                # ha = hf.add_subplot(111, projection='3d')
-                # X, Y = np.meshgrid(x, y)  # `plot_surface` expects `x` and `y` data to be 2D
-                # print(xgrad.shape,X.shape,Y.shape)
-                # ha.plot_surface(X.T, Y.T, xgrad)
-                # plt.show()
-            # TODO(aidan): below line does not work. Replce "sg" progress meter with actual progress meter
-            #sg.one_line_progress_meter('Getting Noise Data', bar + 1, len(voltages)*iterations)
-            bar+=1
-        results_matrix.append(data_matrix)
-    true_values = []
-    ix = 304
-    iy = 7
-    for sweep in results_matrix:
-        previous_value = 0
-        true_value = 0
-        # for ix, iy in np.ndindex(sweep[0][1].shape):
-        for idx,[mv,matrix] in enumerate(sweep):
-            value = matrix[ix,iy]*mv
-            if previous_value == 0 and value >0:
-                true_value = value - step/2
-                true_values.append(true_value)
-            previous_value = value
-    plt.hist(true_values,bins=n_bins)
-    print(np.mean(true_values),np.std(true_values))
-    plt.show()
 
 #######
 # CLI #
