@@ -417,6 +417,7 @@ elif args.command == 'erase':
     sector_range = range(args.address, args.address + args.sectors*2**16, 2**16)
     for sector in sector_range:
         handle_erase_sector(sector)
+        time.sleep(0.5)
 
 # Write entire chip
 elif args.command == 'write-chip':
