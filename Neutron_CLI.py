@@ -249,7 +249,7 @@ def read_sector_csv(mv, sa, location):
     saved_array = np.zeros((512,16))
     for idx, address in enumerate(range(sa, sa + 65024 + 512, 512)):
         #NDarray = read_chunk_retries_csv(mv, address, retries=3)
-        NDarray = retry(3, handle_read_data, mv, address, 1, 0)
+        NDarray = retry(3, handle_read_data, address, mv, 1, 0)
         if idx == 0:
             saved_array = NDarray
         else:
