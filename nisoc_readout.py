@@ -476,11 +476,11 @@ class ReadoutNR1(ReadoutBase):
 
 		return bits_set
 
-	def read_data(self, base_address: int, vt_mode: bool=False, read_mv: int=4000) -> bytearray:
-		cmd_len = 20
+	def read_data(self, base_address: int, count: int, vt_mode: bool=False, read_mv: int=4000) -> bytearray:
+		cmd_len = 24
 		#rsp_len = 1032
 		cmd_data = _make_cmd(cmd_len, MSG_IDS['cmd_read_data'])
-		struct.pack_into("<III", cmd_data, 4, base_address, 1 if vt_mode else 0, read_mv)
+		struct.pack_into("<IIII", cmd_data, 4, base_address, 1 if vt_mode else 0, read_mv, count)
 		_insert_crc(cmd_data)
 
 		self.writefunc(cmd_data)

@@ -92,7 +92,7 @@ def handle_program_chip(prog_value):
     print("  Program Chip with word {:04X}".format(prog_value))
     return True
 
-def new_handle_read_data(address, read_mv, vt):
+def new_handle_read_data(address, read_mv, vt, chunk_size=512):
     vt_mode = True if vt is not None else False
     read_mv = read_mv if vt_mode else 0
 
@@ -100,12 +100,12 @@ def new_handle_read_data(address, read_mv, vt):
     # Re-raise any exceptions with address and voltage information
 
     try:
-        data = readout.read_data(address, vt_mode, read_mv)
+        data = readout.read_data(address, chunk_size, vt_mode, read_mv)
     except Exception as e:
-        raise Exception("Exception in read_data at {address:X}h @ {read_mv} mV.") from e
+        raise Exception(f"Exception in read_data at {address:X}h @ {read_mv} mV.") from e
     return data
 
-def handle_read_data(address, read_mv, vt, bit_mode):
+def handle_read_data(address, read_mv, vt, bit_mode, chunk_size=512):
     vt_mode = True if vt is not None else False
     read_mv = read_mv if vt_mode else 0
 
@@ -115,15 +115,15 @@ def handle_read_data(address, read_mv, vt, bit_mode):
 
     ret = None
     try:
-        data = readout.read_data(address, vt_mode, read_mv)
+        data = readout.read_data(address, chunk_size, vt_mode, read_mv)
         array = np.frombuffer(data, dtype=np.uint16)  # or dtype=np.dtype('<f4')
         bitarray = np.unpackbits(array.view(np.uint8))
         if bit_mode:
             ret = sum(bitarray)
         else:
-            ret = np.reshape(bitarray, (512, 16))
+            ret = np.reshape(bitarray, (chunk_size, 16))
     except Exception as e:
-        raise Exception("Exception at {address:X}h @ {read_mv} mV.") from e
+        raise Exception(f"Exception at {address:X}h @ {read_mv} mV.") from e
 
     return ret
 
@@ -233,23 +233,23 @@ def retry(retries, f, *args, **kwargs):
             retries -= 1
     return ret
 
-def read_sector_bin(mv, sa, location):
+def read_sector_bin(mv, sa, location, chunk_size=512):
     # read 512-word (1024-byte) chunks
-    addr_range = range(sa, sa + 65024 + 512, 512)
+    addr_range = range(sa, sa + 65536, chunk_size)
     mem: list[bytearray] = [bytearray()]*len(addr_range)
     for i,address in enumerate(addr_range):
         #mem[i] = read_chunk_retries_bin(mv, address, retries=3)
-        mem[i] = retry(3, new_handle_read_data, address, mv, True)
+        mem[i] = retry(3, new_handle_read_data, address, mv, True, chunk_size)
     # write sector-voltage data to disk
     with open(os.path.join(location, f"data-{mv}-{sa}.bin"), 'ab') as f:
         for block in mem:
             f.write(block)
 
-def read_sector_csv(mv, sa, location):
-    saved_array = np.zeros((512,16))
-    for idx, address in enumerate(range(sa, sa + 65024 + 512, 512)):
+def read_sector_csv(mv, sa, location, chunk_size=512):
+    saved_array = np.zeros((chunk_size,16))
+    for idx, address in enumerate(range(sa, sa + 65536, chunk_size)):
         #NDarray = read_chunk_retries_csv(mv, address, retries=3)
-        NDarray = retry(3, handle_read_data, address, mv, 1, 0)
+        NDarray = retry(3, handle_read_data, address, mv, 1, 0, chunk_size)
         if idx == 0:
             saved_array = NDarray
         else:
@@ -257,7 +257,7 @@ def read_sector_csv(mv, sa, location):
     np.savetxt(os.path.join(location, f"data-{mv}-{sa}.csv"), saved_array, fmt='%d', delimiter='')
 
 # read voltage from the chip
-def read_chip_voltages(voltages, sectors, location='.', csv=False):
+def read_chip_voltages(voltages, sectors, location='.', csv=False, chunk_size=512):
     # Progress bar
     count = 1
     printProgressBar(0, len(voltages)*len(sectors), prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
@@ -267,9 +267,9 @@ def read_chip_voltages(voltages, sectors, location='.', csv=False):
         # Loop through read voltages
         for _, mv in enumerate(voltages):
             if csv:
-                read_sector_csv(mv, base_address, location)
+                read_sector_csv(mv, base_address, location, chunk_size=chunk_size)
             else:
-                read_sector_bin(mv, base_address, location)
+                read_sector_bin(mv, base_address, location, chunk_size=chunk_size)
             count+=1
             printProgressBar(count, len(voltages)*len(sectors), prefix='Getting sweep data: ', suffix='complete', decimals=0, length=50)
     print()
@@ -311,6 +311,7 @@ read_parser.add_argument('--stop', type=partial(int_positive, base=0), required=
 read_parser.add_argument('--step', type=partial(int_positive, base=0), required=True, help='the granularity in mV')
 read_parser.add_argument('-d', '--directory', required=True, help='folder to contain output data files (relative path)')
 read_parser.add_argument('--format', type=str, choices=['binary', 'csv'], default='binary', help='select data format')
+read_parser.add_argument('--chunk-size', type=partial(int_positive, base=0), default=512, help='size of read chunks; should evenly divide sector size')
 
 erase_parser = subparsers.add_parser('erase', help='erase by sector]')
 erase_parser.add_argument('--address', type=partial(int_positive, base=0), required=True, help='erase start address')
@@ -403,10 +404,8 @@ elif args.command == 'read':
 
     voltage_range = range(args.start, args.stop, args.step)
     sector_range = range(args.address, args.address + args.sectors*2**16, 2**16)
-    if args.format == 'binary':
-        read_chip_voltages(voltage_range, sector_range, location=directory)
-    else:
-        read_chip_voltages(voltage_range, sector_range, location=directory, csv=True)
+    write_csv = (args.format != 'binary')
+    read_chip_voltages(voltage_range, sector_range, location=directory, csv=write_csv, chunk_size=args.chunk_size)
 
 # Erase whole chip
 elif args.command == 'erase-chip':
