@@ -32,7 +32,52 @@ def crc_4(arr: Sequence, start=CRC_SEED):
 
 class MessageValidationError(Exception):
 	"""Raised when there is an error validating a message"""
-	pass
+
+	def __init__(self, desc, msgheader: bytes, msgdata: bytes):
+		super().__init__(desc)
+		self.desc      = desc
+		self.msgheader = msgheader
+		self.msgdata   = msgdata
+
+class MessageFailureError(MessageValidationError):
+	"""Raised when a failure response is received"""
+
+	def __init__(self, desc, msgheader: bytes, msgdata: bytes):
+		super().__init__(desc, msgheader, msgdata)
+		print(f"len(msgdata) = {len(msgdata)}")
+		if len(msgdata) >= 4:
+			self.reported_code_count, = struct.unpack_from("<I", msgdata, 0)
+			sent_code_count = (len(msgdata) - 8) // 4
+			self.failure_codes = [struct.unpack_from("<HH", msgdata, 4 + 4*code) for code in range(sent_code_count)]
+			print(f"{self.reported_code_count} {sent_code_count} {self.failure_codes}")
+			print(f"{msgdata}")
+		else:
+			self.reported_code_count = 0
+			self.failure_codes = []
+
+	def __str__(self):
+		plural = lambda v: '' if v == 1 else 's'
+		s = ''
+		if self.reported_code_count == 0 and len(self.failure_codes) == 0:
+			s = "Unknown failure (no codes reported)"
+		elif len(self.failure_codes) == 0:
+			failures = f"failure{plural(self.reported_code_count)}"
+			s = f"Unknown {failures}: {self.reported_code_count} {failures} reported but none sent"
+		elif self.reported_code_count == 0:
+			failures = f"failure{plural(len(self.failure_codes))}"
+			s = f"Unknown failures: No failures reported but additional data sent"
+		elif self.reported_code_count > len(self.failure_codes):
+			repfailures  = f"failure{plural(self.reported_code_count)}"
+			sentfailures = f"failure{plural(len(self.failure_codes))}"
+			s = f"Unknown failures: {self.reported_code_count} {repfailures} reported but only {len(self.failure_codes)} {sentfailures} sent: {self.failure_codes}"
+		elif self.reported_code_count < len(self.failure_codes):
+			s = f"{self.reported_code_count} failure{plural(self.reported_code_count)} (additional data sent): {self.failure_codes[0:self.reported_code_count]}"
+		elif self.reported_code_count == len(self.failure_codes):
+			s = f"{self.reported_code_count} failure{plural(self.reported_code_count)}: {self.failure_codes}"
+		else:
+			return super().__str__()
+		return f"{super().__str__()}: {s}"
+
 
 class SerialTimeoutError(Exception):
 	"""Raised on timeout when reading serial port"""
@@ -76,21 +121,26 @@ MSG_NAMES = {
 MSG_IDS = { MSG_NAMES[msg_id]: msg_id for msg_id in MSG_NAMES }
 
 def _validate_msg(header: bytearray, data: bytearray, exp_id: int) -> bool:
-	# Validate header
+	# Validate start char and total length
 	start_char, length, id = struct.unpack_from("<BHB", header, 0)
 	if start_char != 0x7E:
-		raise MessageValidationError("Wrong start char {}".format(hex(start_char)))
+		raise MessageValidationError(f"Wrong start char {start_char:02X}h", header, data)
 	if len(data) < (length-4):
-		raise MessageValidationError("Data length too short ({} < {})".format(len(data), length-4))
-	if id != exp_id:
-		raise MessageValidationError("Expected message ID {}. Got Message ID {} ({})".format(exp_id, id, MSG_NAMES[id] if id in MSG_NAMES else "unknown message"))
+		raise MessageValidationError(f"Data length too short ({len(data)} < {length-4})", header, data)
 
 	# Validate CRC
 	msg_crc, = struct.unpack_from("<I", data, length-4-4)
 	crc = crc_4(header)
 	crc = crc_4(data[0:length-4-4], crc)
 	if msg_crc != crc:
-		raise MessageValidationError("Message crc {} != calc crc {} for message {} ({})".format(hex(msg_crc), hex(crc), id, MSG_NAMES[id] if id in MSG_NAMES else "unknown message"))
+		raise MessageValidationError("Message crc {msg_crc:08X}h != calc crc {crc:08X}h for message {id} ({MSG_NAMES[id] if id in MSG_NAMES else 'unknown message')})", header, data)
+
+	# check for failure or unexpected response
+	if id == MSG_IDS["rsp_failed"]:
+		raise MessageFailureError(f"Message failed: ID {exp_id} ({MSG_NAMES[exp_id] if exp_id in MSG_NAMES else 'unknown message'})", header, data)
+	if id != exp_id:
+		raise MessageValidationError(f"Expected message ID {exp_id}. Got Message ID {id} ({MSG_NAMED[id] if id in MSG_NAMES else 'unknown message'})", header, data)
+
 	return True
 
 def _read_rsp(readfunc: Callable[[int], bytes], rsp_id: int) -> bytes:
