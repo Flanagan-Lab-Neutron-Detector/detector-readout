@@ -355,16 +355,17 @@ def ser_write(data) -> None:
     time.sleep(0.003)
     ser.write(data)
 
+# initialize readout
+readout = nisoc_readout.ReadoutNR0(ser_read, ser_write)
+
 # Check if a port is valid and assign serial object if possible
 # if not test, ser is assigned and readout is set to readout_prod
 # if test, ser stays None and readout is set to readout_test
 ser: serial.Serial = None
-readout = None
 if(args.test):
     print("Running in Test Mode")
     readout = nisoc_readout.ReadoutDummy(ser_read, ser_write)
 elif(args.port):
-    readout = nisoc_readout.ReadoutNR0(ser_read, ser_write)
     print("Checking status of port " + args.port)
     try:
         ser = serial.Serial(args.port, 115200, bytesize = serial.EIGHTBITS,stopbits =serial.STOPBITS_ONE, parity  = serial.PARITY_NONE,timeout=1)
@@ -391,9 +392,30 @@ else:
 # List ports
 if args.command == 'list':
     ports = serial.tools.list_ports.comports()
-    port_names = []
-    for port, desc, hwid in sorted(ports):
-        print(port, desc)
+
+    nisoc_ports = []
+    other_ports = []
+    for port in ports:
+        try:
+            ser = serial.Serial(port[0], 115200, bytesize=serial.EIGHTBITS, stopbits=serial.STOPBITS_ONE, parity=serial.PARITY_NONE, timeout=0.05)
+            _, version, _ = readout.ping()
+            # if no exceptions, it's a working NRx
+            nisoc_ports.append((port[0], version))
+        except:
+            other_ports.append(port)
+
+    if len(nisoc_ports) > 0:
+        print()
+        print("NISoC Readouts:")
+        for port, version in sorted(nisoc_ports):
+            print(f"\t{port} {version}")
+    if len(other_ports) > 0:
+        print()
+        print("Other serial ports:")
+        for port, desc, _ in sorted(other_ports):
+            print(f"\t{port} {desc}")
+    if len(nisoc_ports) == 0 and len(other_ports) == 0:
+        print("No serial ports found")
 
 # Read a sector or entire chip
 elif args.command == 'read':
