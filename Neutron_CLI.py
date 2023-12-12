@@ -385,7 +385,7 @@ elif(args.port):
     print("  Ping")
     print(f"    Firmware {version}")
     print(f"    Uptime   {uptime}s")
-    print(f"    idle     {bool(is_busy)}")
+    print(f"    Busy     {bool(is_busy)}")
 else:
     print("Neither -t nor -p specified. Good luck.")
 
