@@ -373,19 +373,26 @@ elif(args.port):
         print(e)
         parser.error("It appears there was a problem with your USB port")
 
-    uptime, version, is_busy = readout.ping()
+    uptime, version, is_busy, *_ = readout.ping()
 
     if version == "NR1 test":
         print("Connected to NR1 prototype")
         readout = nisoc_readout.ReadoutNR1(ser_read, ser_write)
-        uptime, version, is_busy = readout.ping()
+        uptime, version, is_busy, reset_flags, task, task_state, *_ = readout.ping()
+        print("  Ping")
+        print(f"    Firmware   {version}")
+        print(f"    Uptime     {uptime}s")
+        print(f"    Busy       {bool(is_busy)}")
+        print(f"    Reset      {reset_flags:X}h")
+        print(f"    Task       {task}")
+        print(f"    Task State {task_state}")
     else:
         print("Connected to NR0")
+        print("  Ping")
+        print(f"    Firmware {version}")
+        print(f"    Uptime   {uptime}s")
+        print(f"    Busy     {bool(is_busy)}")
 
-    print("  Ping")
-    print(f"    Firmware {version}")
-    print(f"    Uptime   {uptime}s")
-    print(f"    Busy     {bool(is_busy)}")
 else:
     print("Neither -t nor -p specified. Good luck.")
 
@@ -398,7 +405,7 @@ if args.command == 'list':
     for port in ports:
         try:
             ser = serial.Serial(port[0], 115200, bytesize=serial.EIGHTBITS, stopbits=serial.STOPBITS_ONE, parity=serial.PARITY_NONE, timeout=0.05)
-            _, version, _ = readout.ping()
+            _, version, *_ = readout.ping()
             # if no exceptions, it's a working NRx
             nisoc_ports.append((port[0], version))
         except:

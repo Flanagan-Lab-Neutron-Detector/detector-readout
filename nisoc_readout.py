@@ -457,9 +457,10 @@ class ReadoutNR1(ReadoutBase):
 		self.writefunc(cmd_data)
 		rsp_data = _read_rsp(self.readfunc, MSG_IDS['rsp_ping'])
 		uptime, version_bin, is_busy = struct.unpack_from("<I16sI", rsp_data, 0)
+		reset_flags, task, task_state = struct.unpack_from("<III", rsp_data, 24)
 		version = version_bin.decode('utf-8', 'ignore').rstrip('\x00')
 
-		return uptime, version, is_busy
+		return uptime, version, is_busy, reset_flags, task, task_state
 
 	def vt_get_bit_count_kpage(self, base_address: int, read_mv: int) -> list:
 		cmd_len = 16
