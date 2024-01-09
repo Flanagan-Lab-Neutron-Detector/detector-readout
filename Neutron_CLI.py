@@ -127,6 +127,12 @@ def handle_read_data(address, read_mv, vt, bit_mode, chunk_size=512):
 
     return ret
 
+def handle_cfg_write(address, value):
+    readout.write_cfg(address, value)
+
+def handle_cfg_read(address):
+    return readout.read_cfg(address)
+
 analog_unit_map = {
     "ce" : 0,
     "reset" : 1,
@@ -338,6 +344,14 @@ dac_activeset_parser = dac_subparsers.add_parser('set-active', help='set DAC act
 dac_activeset_parser.add_argument('unit', type=int, choices=[0, 1, 2, 3], help='DAC unit')
 dac_activeset_parser.add_argument('value', type=partial(int_positive, base=0), help='Active value')
 
+cfg_parser = subparsers.add_parser('cfg', help='read/write configuration registers')
+cfg_subparsers = cfg_parser.add_subparsers(title="CFG commands", description="CFG commands", required=True, dest='cfg_command')
+cfg_write_parser = cfg_subparsers.add_parser('write', help='write to CFG register')
+cfg_write_parser.add_argument('address', type=partial(int_positive, base=0), help='cfg register address')
+cfg_write_parser.add_argument('value', type=partial(int_positive, base=0), help='write value')
+cfg_read_parser = cfg_subparsers.add_parser('read', help='read from CFG register')
+cfg_read_parser.add_argument('address', type=partial(int_positive, base=0), help='cfg register address')
+
 args = parser.parse_args()
 
 # Serial read/write
@@ -462,6 +476,14 @@ elif args.command == 'write':
     sector_range = range(args.address, args.address + args.sectors*2**16, 2**16)
     for sector in sector_range:
         handle_program_sector(sector, args.value)
+
+elif args.command == 'cfg':
+    if args.cfg_command == 'write':
+        handle_cfg_write(args.address, args.value)
+        print(f"  CFG reg {args.address:04X} set to {args.value:04X}")
+    elif args.cfg_command == 'read':
+        val = handle_cfg_read(args.address)
+        print(f"  CFG reg {args.address:04X} = {val:04X}")
 
 # Print calibration counts
 elif args.command == 'dac' and args.dac_command == 'get-calibration':

@@ -109,6 +109,12 @@ MSG_NAMES = {
 	19 : "rsp_read_data",
 	20 : "cmd_write_data",
 	21 : "rsp_write_data",
+	22 : "cmd_read_word",
+	23 : "rsp_read_word",
+	24 : "cmd_write_cfg",
+	25 : "rsp_write_cfg",
+	26 : "cmd_read_cfg",
+	27 : "rsp_read_cfg",
 
 	80 : "cmd_ana_get_cal_counts",
 	81 : "rsp_ana_get_cal_counts",
@@ -219,6 +225,21 @@ class ReadoutBase(ABC):
 		pass
 
 	@abstractmethod
+	def read_word(self, address: int, vt_mode: bool=False, read_mv: int=4000) -> int:
+		"""Read single word"""
+		pass
+	
+	@abstractmethod
+	def write_cfg(self, address: int, data: int) -> None:
+		"""Write configuration word"""
+		pass
+
+	@abstractmethod
+	def read_cfg(self, address: int) -> int:
+		"""Read configuration word"""
+		pass
+
+	@abstractmethod
 	def ana_get_cal_counts(self):
 		"""Get analog calibration"""
 		pass
@@ -269,6 +290,15 @@ class ReadoutDummy(ReadoutBase):
 
 	def write_data(self, base_address: int, words) -> None:
 		pass
+
+	def read_word(self, address: int, vt_mode: bool=False, read_mv: int=4000) -> int:
+		return 0xAA
+
+	def write_cfg(self, address: int, data: int) -> None:
+		pass
+
+	def read_cfg(self, address: int) -> int:
+		return 0x1111
 
 	def ana_get_cal_counts(self) -> tuple[int, int, int, int]:
 		return 16000, 16000, 16000, 16000
@@ -398,6 +428,15 @@ class ReadoutNR0(ReadoutBase):
 
 		self.writefunc(cmd_data)
 		_ = _read_rsp(self.readfunc, MSG_IDS['rsp_write_data'])
+
+	def read_word(self, address: int, vt_mode: bool=False, read_mv: int=4000) -> int:
+		raise NotImplementedError
+
+	def write_cfg(self, address: int, data: int) -> None:
+		raise NotImplementedError
+
+	def read_cfg(self, address: int) -> int:
+		raise NotImplementedError
 
 	def ana_get_cal_counts(self) -> tuple[int, int, int, int]:
 		cmd_len = 8
@@ -551,6 +590,42 @@ class ReadoutNR1(ReadoutBase):
 
 		self.writefunc(cmd_data)
 		_ = _read_rsp(self.readfunc, MSG_IDS['rsp_write_data'])
+
+	def read_word(self, address: int, vt_mode: bool=False, read_mv: int=4000) -> int:
+		cmd_len = 20
+		#rsp_len = 12
+		cmd_data = _make_cmd(cmd_len, MSG_IDS['cmd_read_word'])
+		struct.pack_into("<III", cmd_data, 4, 1 if vt_mode else 0, read_mv, address)
+		_insert_crc(cmd_data)
+
+		self.writefunc(cmd_data)
+		rsp_data = _read_rsp(self.readfunc, MSG_IDS['rsp_read_word'])
+		word, = struct.unpack_from("<H", rsp_data, 0)
+
+		return word
+
+	def write_cfg(self, address: int, data: int) -> None:
+		cmd_len = 16
+		#rsp_len = 8
+		cmd_data = _make_cmd(cmd_len, MSG_IDS['cmd_write_cfg'])
+		struct.pack_into("<II", cmd_data, 4, address, data)
+		_insert_crc(cmd_data)
+
+		self.writefunc(cmd_data)
+		_ = _read_rsp(self.readfunc, MSG_IDS['rsp_write_cfg'])
+
+	def read_cfg(self, address: int) -> int:
+		cmd_len = 12
+		#rsp_len = 12
+		cmd_data = _make_cmd(cmd_len, MSG_IDS['cmd_read_cfg'])
+		struct.pack_into("<I", cmd_data, 4, address)
+		_insert_crc(cmd_data)
+
+		self.writefunc(cmd_data)
+		rsp_data = _read_rsp(self.readfunc, MSG_IDS['rsp_read_cfg'])
+		word, = struct.unpack_from("<I", rsp_data, 0)
+
+		return word
 
 	def ana_get_cal_counts(self, unit: int) -> tuple[int, int, int, int]:
 		cmd_len = 12
