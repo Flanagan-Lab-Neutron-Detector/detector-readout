@@ -133,6 +133,61 @@ def handle_cfg_write(address, value):
 def handle_cfg_read(address):
     return readout.read_cfg(address)
 
+def handle_cfg_flash_read(offset, length, outpath, print_hex=False):
+    open_flags = 'w' if print_hex else 'wb'
+    outf = sys.stdout if outpath is None else open(outpath, open_flags)
+
+    # we can read up to 4K in a single message
+    nblocks = length // 4096
+    nleft = length % 4096
+
+    # enter flash passthrough
+    readout.cfg_flash_enter()
+    time.sleep(1)
+
+    def write_data(data, outf, print_hex):
+        if print_hex:
+            # TODO: make prettier
+            print(''.join([f"{b:02X}" for b in data]), file=outf)
+        else:
+            if outpath is None: # outf is stdout
+                outf.buffer.write(data)
+            else: # outf is a file opened with 'wb'
+                outf.write(data)
+
+    for bi in range(nblocks):
+        data = readout.cfg_flash_read(offset + bi*4096, 4096)
+        write_data(data, outf, print_hex)
+
+    # remaining data
+    data = readout.cfg_flash_read(offset + nblocks*4096, nleft)
+    write_data(data, outf, print_hex)
+
+    readout.cfg_flash_exit()
+
+    if outpath is not None:
+        outf.close()
+
+def handle_cfg_flash_verify(binpath):
+    with open(binpath, 'rb') as binfile:
+        # enter flash passthrough
+        readout.cfg_flash_enter()
+        time.sleep(1)
+        addr = 0
+        try:
+            while binchunk := binfile.read(4096):
+                # get data from flash
+                data = readout.cfg_flash_read(addr, len(binchunk))
+                # compare
+                for i in range(len(binchunk)):
+                    if data[i] != binchunk[i]:
+                        raise Exception(f"  VERIFY FAILED at {addr+i:06X}h: flash={data[i]:02X}h file={binchunk[i]:02X}")
+                # next
+                addr += len(binchunk)
+            print("  Flash and binfile match")
+        finally:
+            readout.cfg_flash_exit()
+
 analog_unit_map = {
     "ce" : 0,
     "reset" : 1,
@@ -352,6 +407,17 @@ cfg_write_parser.add_argument('value', type=partial(int_positive, base=0), help=
 cfg_read_parser = cfg_subparsers.add_parser('read', help='read from CFG register')
 cfg_read_parser.add_argument('address', type=partial(int_positive, base=0), help='cfg register address')
 
+flash_parser = subparsers.add_parser('flash', help='read/write interface FPGA configuration flash')
+flash_subparsers = flash_parser.add_subparsers(title='Flash commands', description='Flash commands', required=True, dest='flash_command')
+flash_info_parser = flash_subparsers.add_parser('info', help='get flash info')
+flash_read_parser = flash_subparsers.add_parser('read', help='read data from flash')
+flash_read_parser.add_argument('-o', dest='out_path', help='output file path')
+flash_read_parser.add_argument('--hex', action='store_true', help='print as ascii hex instead of binary')
+flash_read_parser.add_argument('--offset', type=partial(int_positive, base=0), default=0, help='read starting at this address')
+flash_read_parser.add_argument('--length', type=partial(int_positive, base=0), default=128*1024*1024, help='number of bytes to read')
+flash_verify_parser = flash_subparsers.add_parser('verify', help='verify flash contents')
+flash_verify_parser.add_argument('binfile', help='file to verify against')
+
 args = parser.parse_args()
 
 # Serial read/write
@@ -477,6 +543,7 @@ elif args.command == 'write':
     for sector in sector_range:
         handle_program_sector(sector, args.value)
 
+# CFG regs
 elif args.command == 'cfg':
     if args.cfg_command == 'write':
         handle_cfg_write(args.address, args.value)
@@ -484,6 +551,30 @@ elif args.command == 'cfg':
     elif args.cfg_command == 'read':
         val = handle_cfg_read(args.address)
         print(f"  CFG reg {args.address:04X} = {val:04X}")
+
+# Interface FPGA cfg flash
+elif args.command == 'flash':
+    if args.flash_command == 'info':
+        # enter flash passthrough
+        readout.cfg_flash_enter()
+        time.sleep(1)
+        # now read
+        mfg, devid, jedec_type, jedec_cap, uid, sr1, sr2, sr3 = readout.cfg_flash_dev_info()
+        print("Flash info")
+        print(f"  mfg:        {mfg:02X}h")
+        print(f"  dev id:     {devid:02X}h")
+        print(f"  JEDEC type: {jedec_type:02X}h")
+        print(f"  JEDEC cap:  {jedec_cap:02X}h")
+        print(f"  UID:        {' '.join([f'{b:02X}h' for b in uid])}")
+        print(f"  status 1:   {sr1:02X}h")
+        print(f"  status 2:   {sr2:02X}h")
+        print(f"  status 3:   {sr3:02X}h")
+        # exit flash passthrough
+        readout.cfg_flash_exit()
+    elif args.flash_command == 'read':
+        handle_cfg_flash_read(args.offset, args.length, args.out_path, print_hex=args.hex)
+    elif args.flash_command == 'verify':
+        handle_cfg_flash_verify(args.binfile)
 
 # Print calibration counts
 elif args.command == 'dac' and args.dac_command == 'get-calibration':

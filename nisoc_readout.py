@@ -116,6 +116,19 @@ MSG_NAMES = {
 	26 : "cmd_read_cfg",
 	27 : "rsp_read_cfg",
 
+	28 : "cmd_cfg_flash_enter",
+	29 : "rsp_cfg_flash_enter",
+	30 : "cmd_cfg_flash_exit",
+	31 : "rsp_cfg_flash_exit",
+	32 : "cmd_cfg_flash_read",
+	33 : "rsp_cfg_flash_read",
+	34 : "cmd_cfg_flash_write",
+	35 : "rsp_cfg_flash_write",
+	36 : "cmd_cfg_flash_erase",
+	37 : "rsp_cfg_flash_erase",
+	38 : "cmd_cfg_flash_dev_info",
+	39 : "rsp_cfg_flash_dev_info",
+
 	80 : "cmd_ana_get_cal_counts",
 	81 : "rsp_ana_get_cal_counts",
 	82 : "cmd_ana_set_cal_counts",
@@ -240,6 +253,31 @@ class ReadoutBase(ABC):
 		pass
 
 	@abstractmethod
+	def cfg_flash_enter(self) -> None:
+		"""Enter CFG Flash access mode"""
+		pass
+
+	@abstractmethod
+	def cfg_flash_exit(self) -> None:
+		"""Exit CFG Flash access mode"""
+		pass
+
+	@abstractmethod
+	def cfg_flash_read(self, address: int, count: int) -> bytes:
+		"""Read from CFG flash"""
+		pass
+
+	@abstractmethod
+	def cfg_flash_write(self, address: int, count: int, data: bytes) -> None:
+		"""Write to CFG flash"""
+		pass
+
+	@abstractmethod
+	def cfg_flash_erase(self, address: int, erase_type: int) -> None:
+		"""Erase CFG flash"""
+		pass
+
+	@abstractmethod
 	def ana_get_cal_counts(self):
 		"""Get analog calibration"""
 		pass
@@ -299,6 +337,24 @@ class ReadoutDummy(ReadoutBase):
 
 	def read_cfg(self, address: int) -> int:
 		return 0x1111
+
+	def cfg_flash_enter(self) -> None:
+		pass
+
+	def cfg_flash_exit(self) -> None:
+		pass
+
+	def cfg_flash_read(self, address: int, count: int) -> bytes:
+		return bytes([5] * count)
+
+	def cfg_flash_write(self, address: int, count: int, data: bytes) -> None:
+		pass
+
+	def cfg_flash_erase(self, address: int, erase_type: int) -> None:
+		pass
+
+	def cfg_flash_dev_info(self) -> tuple[int, int, int, int, bytes, int, int, int]:
+		return 0, 0, 0, 0, b'1234', 0, 0, 0
 
 	def ana_get_cal_counts(self) -> tuple[int, int, int, int]:
 		return 16000, 16000, 16000, 16000
@@ -436,6 +492,24 @@ class ReadoutNR0(ReadoutBase):
 		raise NotImplementedError
 
 	def read_cfg(self, address: int) -> int:
+		raise NotImplementedError
+
+	def cfg_flash_enter(self) -> None:
+		raise NotImplementedError
+
+	def cfg_flash_exit(self) -> None:
+		raise NotImplementedError
+
+	def cfg_flash_read(self, address: int, count: int) -> bytes:
+		raise NotImplementedError
+
+	def cfg_flash_write(self, address: int, count: int, data: bytes) -> None:
+		raise NotImplementedError
+
+	def cfg_flash_erase(self, address: int, erase_type: int) -> None:
+		raise NotImplementedError
+
+	def cfg_flash_dev_info(self) -> tuple[int, int, int, int, bytes, int, int, int]:
 		raise NotImplementedError
 
 	def ana_get_cal_counts(self) -> tuple[int, int, int, int]:
@@ -626,6 +700,70 @@ class ReadoutNR1(ReadoutBase):
 		word, = struct.unpack_from("<I", rsp_data, 0)
 
 		return word
+
+	def cfg_flash_enter(self) -> None:
+		cmd_len = 8
+		#rsp_len = 8
+		cmd_data = _make_cmd(cmd_len, MSG_IDS['cmd_cfg_flash_enter'])
+		# no data
+		_insert_crc(cmd_data)
+
+		self.writefunc(cmd_data)
+		_ = _read_rsp(self.readfunc, MSG_IDS['rsp_cfg_flash_enter'])
+
+	def cfg_flash_exit(self) -> None:
+		cmd_len = 8
+		#rsp_len = 8
+		cmd_data = _make_cmd(cmd_len, MSG_IDS['cmd_cfg_flash_exit'])
+		# no data
+		_insert_crc(cmd_data)
+
+		self.writefunc(cmd_data)
+		_ = _read_rsp(self.readfunc, MSG_IDS['rsp_cfg_flash_exit'])
+
+	def cfg_flash_read(self, address: int, count: int) -> bytes:
+		cmd_len = 16
+		#rsp_len = 8 + count
+		cmd_data = _make_cmd(cmd_len, MSG_IDS['cmd_cfg_flash_read'])
+		struct.pack_into("<II", cmd_data, 4, address, count)
+		_insert_crc(cmd_data)
+
+		self.writefunc(cmd_data)
+		rsp_data = _read_rsp(self.readfunc, MSG_IDS['rsp_cfg_flash_read'])
+
+		return bytes(rsp_data[0:-4])
+
+	def cfg_flash_write(self, address: int, count: int, data: bytes) -> None:
+		cmd_len = 8 + 8 + count
+		#rsp_len = 8
+		cmd_data = _make_cmd(cmd_len, MSG_IDS['cmd_cfg_flash_write'])
+		struct.pack_into(f"<II{count}s", cmd_data, 4, address, count, data)
+		_insert_crc(cmd_data)
+
+		self.writefunc(cmd_data)
+		_ = _read_rsp(self.readfunc, MSG_IDS['rsp_cfg_flash_write'])
+
+	def cfg_flash_erase(self, address: int, erase_type: int) -> None:
+		cmd_len = 16
+		#rsp_len = 8
+		cmd_data = _make_cmd(cmd_len, MSG_IDS['cmd_cfg_flash_erase'])
+		struct.pack_into("<II", cmd_data, 4, address, erase_type)
+		_insert_crc(cmd_data)
+
+		self.writefunc(cmd_data)
+		_ = _read_rsp(self.readfunc, MSG_IDS['rsp_cfg_flash_erase'])
+
+	def cfg_flash_dev_info(self) -> tuple[int, int, int, int, bytes, int, int, int]:
+		cmd_len = 8
+		#rsp_len = 16
+		cmd_data = _make_cmd(cmd_len, MSG_IDS['cmd_cfg_flash_dev_info'])
+		_insert_crc(cmd_data)
+
+		self.writefunc(cmd_data)
+		rsp_data = _read_rsp(self.readfunc, MSG_IDS['rsp_cfg_flash_dev_info'])
+		mfg, devid, jtype, jcap, uid, sr1, sr2, sr3 = struct.unpack_from("<BBBB4sBBB", rsp_data, 0)
+
+		return mfg, devid, jtype, jcap, uid, sr1, sr2, sr3
 
 	def ana_get_cal_counts(self, unit: int) -> tuple[int, int, int, int]:
 		cmd_len = 12
