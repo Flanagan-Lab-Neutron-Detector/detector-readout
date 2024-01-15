@@ -168,11 +168,12 @@ def handle_cfg_flash_read(offset, length, outpath, print_hex=False):
     if outpath is not None:
         outf.close()
 
-def handle_cfg_flash_verify(binpath):
+def handle_cfg_flash_verify(binpath, flash_entry=True):
     with open(binpath, 'rb') as binfile:
-        # enter flash passthrough
-        readout.cfg_flash_enter()
-        time.sleep(1)
+        if flash_entry:
+            # enter flash passthrough
+            readout.cfg_flash_enter()
+            time.sleep(1)
         addr = 0
         try:
             while binchunk := binfile.read(4096):
@@ -186,7 +187,8 @@ def handle_cfg_flash_verify(binpath):
                 addr += len(binchunk)
             print("  Flash and binfile match")
         finally:
-            readout.cfg_flash_exit()
+            if flash_entry:
+                readout.cfg_flash_exit()
 
 def handle_cfg_flash_erase_chip(blocking=True):
     # enter flash passthrough
@@ -296,12 +298,12 @@ def handle_cfg_flash_write(binpath):
                         break
                 # next
                 addr += len(binchunk)
+
+            print(f"  Wrote {binpath} to flash")
+            print("  Verifying...")
+            handle_cfg_flash_verify(binpath, flash_entry=False)
         finally:
             readout.cfg_flash_exit()
-
-    print(f"  Wrote {binpath} to flash")
-    print("  Verifying...")
-    handle_cfg_flash_verify(binpath)
 
 analog_unit_map = {
     "ce" : 0,
