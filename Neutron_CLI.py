@@ -188,6 +188,121 @@ def handle_cfg_flash_verify(binpath):
         finally:
             readout.cfg_flash_exit()
 
+def handle_cfg_flash_erase_chip(blocking=True):
+    # enter flash passthrough
+    readout.cfg_flash_enter()
+    time.sleep(1)
+    # erase
+    print("Erase chip")
+    readout.cfg_flash_erase(0, 3)
+    while blocking:
+        time.sleep(1)
+        # monitor sr1[0] (BUSY)
+        _, _, _, _, _, sr1, _, _ = readout.cfg_flash_dev_info()
+        if (sr1 & 0x01) == 0:
+            break
+    # exit flash passthrough
+    readout.cfg_flash_exit()
+
+def cfg_flash_erase_blocking(address, erase_type):
+    # assumes we've already entered flash passthrough
+    # erase
+    szstr = '4K' if erase_type == 0 else '32K' if erase_type == 1 else '64K' if erase_type == 2 else 'UNKNOWN SIZE'
+    print(f"Erase {address:06X}h {szstr}")
+    readout.cfg_flash_erase(address, erase_type)
+    while True:
+        time.sleep(1 if erase_type == 3 else 0.05)
+        # monitor sr1[0] (BUSY)
+        _, _, _, _, _, sr1, _, _ = readout.cfg_flash_dev_info()
+        if (sr1 & 0x01) == 0:
+            break
+
+def handle_cfg_flash_erase_range(offset, length, entry=True):
+    if entry:
+        # enter flash passthrough
+        readout.cfg_flash_enter()
+        time.sleep(1)
+
+    try:
+        # finest erase granularity is 4K pages
+        pgoff = offset // 4096
+        pglen = (length + 4096-1) // 4096
+        if (offset + length + 4096-1)//4096 > (offset//4096 + pglen):
+            pglen += 1
+
+        #print(f"{pgoff=} {pglen=}")
+
+        # if we are not at a 64K boundary, erase with 32K or 4K to the next 64K block
+        if (pgoff % 16) != 0:
+            # if we are not at a 32K boundary, erase with 4K to the next 32K block
+            while ((pgoff % 8) != 0) and (pglen > 0):
+                cfg_flash_erase_blocking(pgoff*4096, 0)
+                pgoff += 1
+                pglen -= 1
+            #print(f"{pgoff=} {pglen=}")
+            # now erase a 32K block (if we have blocks remaining and not at 64K boundary)
+            if (pgoff % 16 != 0) and (pglen//8 > 0):
+                cfg_flash_erase_blocking(pgoff*4096, 1)
+                pgoff += 8
+                pglen -= 8
+                #print(f"{pgoff=} {pglen=}")
+
+        # now erase as many 64K blocks as we can
+        while (pglen//16) != 0:
+            cfg_flash_erase_blocking(pgoff*4096, 2)
+            pgoff += 16
+            pglen -= 16
+            #print(f"{pgoff=} {pglen=}")
+
+        # now erase a 32K block if we can
+        if (pglen//8) != 0:
+            cfg_flash_erase_blocking(pgoff*4096, 1)
+            pgoff += 8
+            pglen -= 8
+            #print(f"{pgoff=} {pglen=}")
+
+        # now erase 4K blocks until we're done
+        while pglen > 0:
+            cfg_flash_erase_blocking(pgoff*4096, 0)
+            pgoff += 1
+            pglen -= 1
+            #print(f"{pgoff=} {pglen=}")
+
+    finally:
+        if entry:
+            # exit flash passthrough
+            readout.cfg_flash_exit()
+
+def handle_cfg_flash_write(binpath):
+    with open(binpath, 'rb') as binfile:
+        binfilesize = os.stat(binpath).st_size
+        # enter flash passthrough
+        readout.cfg_flash_enter()
+        # erase
+        handle_cfg_flash_erase_range(0, binfilesize, entry=False)
+        # now write
+        addr = 0
+        print()
+        try:
+            while binchunk := binfile.read(256):
+                # write data to flash
+                print(f"\rWriting to {addr:06X} {100*(addr+len(binchunk))/binfilesize:2.0f}%", end='', flush=True)
+                readout.cfg_flash_write(addr, len(binchunk), binchunk)
+                while True:
+                    time.sleep(0.05)
+                    # monitor sr1[0] (BUSY)
+                    _, _, _, _, _, sr1, _, _ = readout.cfg_flash_dev_info()
+                    if (sr1 & 0x01) == 0:
+                        break
+                # next
+                addr += len(binchunk)
+        finally:
+            readout.cfg_flash_exit()
+
+    print(f"  Wrote {binpath} to flash")
+    print("  Verifying...")
+    handle_cfg_flash_verify(binpath)
+
 analog_unit_map = {
     "ce" : 0,
     "reset" : 1,
@@ -417,6 +532,12 @@ flash_read_parser.add_argument('--offset', type=partial(int_positive, base=0), d
 flash_read_parser.add_argument('--length', type=partial(int_positive, base=0), default=128*1024*1024, help='number of bytes to read')
 flash_verify_parser = flash_subparsers.add_parser('verify', help='verify flash contents')
 flash_verify_parser.add_argument('binfile', help='file to verify against')
+flash_erase_chip_parser = flash_subparsers.add_parser('erase-chip', help='erase flash chip')
+flash_erase_parser = flash_subparsers.add_parser('erase', help='erase flash sectors')
+flash_erase_parser.add_argument('offset', type=partial(int_positive, base=0), help='erase from offset')
+flash_erase_parser.add_argument('length', type=partial(int_positive, base=0), help='number of bytes to erase')
+flash_write_parser = flash_subparsers.add_parser('write', help='write to flash')
+flash_write_parser.add_argument('binfile', help='file to write')
 
 args = parser.parse_args()
 
@@ -448,7 +569,7 @@ if(args.test):
 elif(args.port):
     print("Checking status of port " + args.port)
     try:
-        ser = serial.Serial(args.port, 115200, bytesize = serial.EIGHTBITS,stopbits =serial.STOPBITS_ONE, parity  = serial.PARITY_NONE,timeout=1)
+        ser = serial.Serial(args.port, 115200, bytesize = serial.EIGHTBITS,stopbits =serial.STOPBITS_ONE, parity  = serial.PARITY_NONE,timeout=2)
     except serial.SerialException as e:
         print(e)
         parser.error("It appears there was a problem with your USB port")
@@ -575,6 +696,12 @@ elif args.command == 'flash':
         handle_cfg_flash_read(args.offset, args.length, args.out_path, print_hex=args.hex)
     elif args.flash_command == 'verify':
         handle_cfg_flash_verify(args.binfile)
+    elif args.flash_command == 'erase-chip':
+        handle_cfg_flash_erase_chip()
+    elif args.flash_command == 'erase':
+        handle_cfg_flash_erase_range(args.offset, args.length)
+    elif args.flash_command == 'write':
+        handle_cfg_flash_write(args.binfile)
 
 # Print calibration counts
 elif args.command == 'dac' and args.dac_command == 'get-calibration':

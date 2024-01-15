@@ -739,6 +739,7 @@ class ReadoutNR1(ReadoutBase):
 		cmd_data = _make_cmd(cmd_len, MSG_IDS['cmd_cfg_flash_write'])
 		struct.pack_into(f"<II{count}s", cmd_data, 4, address, count, data)
 		_insert_crc(cmd_data)
+		#print(f"SEND cmd_cfg_flash_write {MSG_IDS['cmd_cfg_flash_write']} {address=} {count=} {data=} {cmd_data=}")
 
 		self.writefunc(cmd_data)
 		_ = _read_rsp(self.readfunc, MSG_IDS['rsp_cfg_flash_write'])
@@ -747,6 +748,7 @@ class ReadoutNR1(ReadoutBase):
 		cmd_len = 16
 		#rsp_len = 8
 		cmd_data = _make_cmd(cmd_len, MSG_IDS['cmd_cfg_flash_erase'])
+		# erase_type 0=4k 1=32k 2=64k 3=chip
 		struct.pack_into("<II", cmd_data, 4, address, erase_type)
 		_insert_crc(cmd_data)
 
