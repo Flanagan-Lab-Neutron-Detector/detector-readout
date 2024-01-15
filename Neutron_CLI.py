@@ -284,12 +284,12 @@ def handle_cfg_flash_write(binpath):
         addr = 0
         print()
         try:
-            while binchunk := binfile.read(256):
+            while binchunk := binfile.read(1024):
                 # write data to flash
                 print(f"\rWriting to {addr:06X} {100*(addr+len(binchunk))/binfilesize:2.0f}%", end='', flush=True)
                 readout.cfg_flash_write(addr, len(binchunk), binchunk)
                 while True:
-                    time.sleep(0.05)
+                    time.sleep(0.01)
                     # monitor sr1[0] (BUSY)
                     _, _, _, _, _, sr1, _, _ = readout.cfg_flash_dev_info()
                     if (sr1 & 0x01) == 0:
