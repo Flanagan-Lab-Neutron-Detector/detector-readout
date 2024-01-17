@@ -318,12 +318,10 @@ class ReadoutDummy(ReadoutBase):
 	def get_sector_bit_count(self, base_address: int, read_mv: int) -> int:
 		return 12340
 
-	def read_data(self, base_address, vt_mode: bool=False, read_mv: int=0) -> bytearray:
-		data = bytearray(1024)
-		for i in range(0, 1024, 2):
-			data[i] = 0x50
-		for i in range(1, 1025, 2):
-			data[i] = 0xFA
+	def read_data(self, base_address: int, count: int, vt_mode: bool=False, read_mv: int=4000) -> bytearray:
+		data = bytearray(count)
+		for i in range(count):
+			data[i] = 0xFA if i % 2 else 0x50
 		return data
 
 	def write_data(self, base_address: int, words) -> None:
@@ -455,7 +453,7 @@ class ReadoutNR0(ReadoutBase):
 
 		return bits_set
 
-	def read_data(self, base_address: int, vt_mode: bool=False, read_mv: int=4000) -> bytearray:
+	def read_data(self, base_address: int, count: int, vt_mode: bool=False, read_mv: int=4000) -> bytearray:
 		cmd_len = 20
 		#rsp_len = 1032
 		cmd_data = _make_cmd(cmd_len, MSG_IDS['cmd_read_data'])
