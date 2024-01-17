@@ -43,7 +43,3 @@ python3 Neutron_CLI.py list
 ```
 python3 Neutron_CLI.py -p <port> read --address 0 --sectors 1024 --start 1000 --stop 8000 --step 100 -d <output directory>
 ```
-
-## Notes
-
-`Neutron_CLI.py` is the preferred utility to communicate with the readout. `Neutron_GUI.py` is a graphical alternative. `nisoc_readout.py` is a Python module implementing the communications protocol and available commands. `nisoc_readout_dummy.py` contains stub functions for testing readout front-ends.
