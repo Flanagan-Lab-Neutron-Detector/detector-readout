@@ -158,7 +158,7 @@ def _validate_msg(header: bytearray, data: bytearray, exp_id: int) -> bool:
 	if id == MSG_IDS["rsp_failed"]:
 		raise MessageFailureError(f"Message failed: ID {exp_id} ({MSG_NAMES[exp_id] if exp_id in MSG_NAMES else 'unknown message'})", header, data)
 	if id != exp_id:
-		raise MessageValidationError(f"Expected message ID {exp_id}. Got Message ID {id} ({MSG_NAMED[id] if id in MSG_NAMES else 'unknown message'})", header, data)
+		raise MessageValidationError(f"Expected message ID {exp_id}. Got Message ID {id} ({MSG_NAMES[id] if id in MSG_NAMES else 'unknown message'})", header, data)
 
 	return True
 
@@ -241,7 +241,7 @@ class ReadoutBase(ABC):
 	def read_word(self, address: int, vt_mode: bool=False, read_mv: int=4000) -> int:
 		"""Read single word"""
 		pass
-	
+
 	@abstractmethod
 	def write_cfg(self, address: int, data: int) -> None:
 		"""Write configuration word"""
@@ -368,7 +368,7 @@ class ReadoutDummy(ReadoutBase):
 		"wp_acc" : 2,
 		"spare" : 3
 	}
-	
+
 	def ana_set_active_counts(self, unit: int, unit_counts: int) -> None:
 		pass
 
