@@ -6,7 +6,9 @@ import numpy as np
 import time
 import os
 
-import nisoc_readout as nisoc_readout
+from nisoc_readout.nr0 import ReadoutNR0
+from nisoc_readout.nr1 import ReadoutNR1
+from nisoc_readout.testing import ReadoutSimulator
 
 from argparse import ArgumentParser, ArgumentTypeError
 from functools import partial
@@ -338,7 +340,7 @@ def handle_ana_get_cal_counts_nr1(unit: int) -> tuple[float, float]:
         return None, None
 
 def handle_ana_get_cal_counts(unit: int) -> tuple[float, float]:
-    if isinstance(readout, nisoc_readout.ReadoutNR0):
+    if isinstance(readout, ReadoutNR0):
         return handle_ana_get_cal_counts_nr0(unit)
     else:
         return handle_ana_get_cal_counts_nr1(unit)
@@ -369,7 +371,7 @@ def handle_ana_set_cal_counts_nr1(unit: int, c0: float, c1: float):
         print(f"  Invalid unit {unit}")
 
 def handle_ana_set_cal_counts(unit: int, c0: float, c1: float):
-    if isinstance(readout, nisoc_readout.ReadoutNR0):
+    if isinstance(readout, ReadoutNR0):
         handle_ana_set_cal_counts_nr0(unit, c0, c1)
     else:
         handle_ana_set_cal_counts_nr1(unit, c0, c1)
@@ -551,7 +553,7 @@ def ser_write(data) -> None:
     ser.write(data)
 
 # initialize readout
-readout = nisoc_readout.ReadoutNR0(ser_read, ser_write)
+readout = ReadoutNR0(ser_read, ser_write)
 
 # Check if a port is valid and assign serial object if possible
 # if not test, ser is assigned and readout is set to readout_prod
@@ -559,7 +561,14 @@ readout = nisoc_readout.ReadoutNR0(ser_read, ser_write)
 ser: serial.Serial = None
 if(args.test):
     print("Running in Test Mode")
-    readout = nisoc_readout.ReadoutDummy(ser_read, ser_write)
+    simulator = ReadoutSimulator()
+    def test_read(n: int) -> bytes:
+        global simulator
+        return simulator.ser_read(n)
+    def test_write(data) -> None:
+        global simulator
+        simulator.ser_write(data)
+    readout = ReadoutNR1(test_read, test_write)
 elif(args.port):
     print("Checking status of port " + args.port)
     try:
@@ -572,7 +581,7 @@ elif(args.port):
 
     if version == "NR1 test":
         print("Connected to NR1 prototype")
-        readout = nisoc_readout.ReadoutNR1(ser_read, ser_write)
+        readout = ReadoutNR1(ser_read, ser_write)
         uptime, version, is_busy, reset_flags, task, task_state, *_ = readout.ping()
         print("  Ping")
         print(f"    Firmware   {version}")
