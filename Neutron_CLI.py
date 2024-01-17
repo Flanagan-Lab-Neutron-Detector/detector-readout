@@ -63,34 +63,29 @@ def printProgressBar(iteration, total, prefix = '', suffix = '', decimals = 1, l
 # Communications routines #
 ###########################
 
-def handle_none(_port, _args):
-    return True
-
 def handle_vt_get_bit_count_kpage(port, base_address,read_mv):
-    print("TODO(aidan): make this work")
-    return False
+    raise NotImplementedError("TODO(aidan): make this work")
 
 def handle_erase_chip():
     readout.erase_chip()
     print("  Erase Chip")
-    return True
+    # todo: monitor erase progress
 
 def handle_erase_sector(sector_address):
     readout.erase_sector(sector_address)
-    print("  Erase Sector {:08X} complete".format(sector_address))
-    return True
+    print(f"  Erase Sector {sector_address:08X} complete")
 
 def handle_program_sector(sector_address, prog_value):
     t = time.time()
     readout.program_sector(sector_address, prog_value)
-    print("Program Sector {:08X} with word {:04X}".format(sector_address, prog_value))
-    print("time to program sector: {:.2f} s".format(time.time() - t))
-    return True
+    print(f"  Program Sector {sector_address:08X} with word {prog_value:04X}")
+    # todo: monitor program progress
+    print(f"  time to program sector: {time.time() - t:.2f} s")
 
 def handle_program_chip(prog_value):
     readout.program_chip(prog_value)
-    print("  Program Chip with word {:04X}".format(prog_value))
-    return True
+    print(f"  Program Chip with word {prog_value:04X}")
+    # todo: monitor program progress
 
 def new_handle_read_data(address, read_mv, vt, chunk_size=512):
     vt_mode = True if vt is not None else False
@@ -105,12 +100,11 @@ def new_handle_read_data(address, read_mv, vt, chunk_size=512):
         raise Exception(f"Exception in read_data at {address:X}h @ {read_mv} mV.") from e
     return data
 
-def handle_read_data(address, read_mv, vt, bit_mode, chunk_size=512):
+def handle_read_data(address, read_mv, vt, chunk_size=512):
     vt_mode = True if vt is not None else False
     read_mv = read_mv if vt_mode else 0
 
     # Read data, unpack bits, reshape
-    # If bit_mode, count the number of bits set (sum the bits)
     # Re-raise any exceptions with address and voltage information
 
     ret = None
@@ -118,10 +112,7 @@ def handle_read_data(address, read_mv, vt, bit_mode, chunk_size=512):
         data = readout.read_data(address, chunk_size, vt_mode, read_mv)
         array = np.frombuffer(data, dtype=np.uint16)  # or dtype=np.dtype('<f4')
         bitarray = np.unpackbits(array.view(np.uint8))
-        if bit_mode:
-            ret = sum(bitarray)
-        else:
-            ret = np.reshape(bitarray, (chunk_size, 16))
+        ret = np.reshape(bitarray, (chunk_size, 16))
     except Exception as e:
         raise Exception(f"Exception at {address:X}h @ {read_mv} mV.") from e
 
@@ -322,17 +313,19 @@ analog_unit_map_inv = {
 def handle_ana_get_cal_counts_nr0(unit: int) -> tuple[float, float]:
     ce_10v_cts, reset_10v_cts, wp_acc_10v_cts, spare_10v_cts = readout.ana_get_cal_counts()
 
-    print("  CE 10V Counts:       {}\r\n  Reset 10V Counts:    {}\r\n  WP/Acc 10V Counts:   {}\r\n  Spare 10V Counts:    {}".format(
-          ce_10v_cts, reset_10v_cts, wp_acc_10v_cts, spare_10v_cts))
+    print(f"      CE 10V Counts:   {ce_10v_cts}")
+    print(f"   Reset 10V Counts:   {reset_10v_cts}")
+    print(f"  WP/Acc 10V Counts:   {wp_acc_10v_cts}")
+    print(f"   Spare 10V Counts:   {spare_10v_cts}")
 
     if unit == 0:
-        return 0,ce_10v_cts
+        return 0, ce_10v_cts
     elif unit == 1:
-        return 0,reset_10v_cts
+        return 0, reset_10v_cts
     elif unit == 2:
-        return 0,wp_acc_10v_cts
+        return 0, wp_acc_10v_cts
     elif unit == 3:
-        return 0,spare_10v_cts
+        return 0, spare_10v_cts
     else:
         raise ValueError(f"Invalid unit {unit}")
 
@@ -345,10 +338,10 @@ def handle_ana_get_cal_counts_nr1(unit: int) -> tuple[float, float]:
         return None, None
 
 def handle_ana_get_cal_counts(unit: int) -> tuple[float, float]:
-    if isinstance(readout, nisoc_readout.ReadoutNR1):
-        return handle_ana_get_cal_counts_nr1(unit)
-    else:
+    if isinstance(readout, nisoc_readout.ReadoutNR0):
         return handle_ana_get_cal_counts_nr0(unit)
+    else:
+        return handle_ana_get_cal_counts_nr1(unit)
 
 def handle_ana_set_cal_counts_nr0(unit: int, c0: float, c1: float):
     # Get old values
@@ -376,10 +369,10 @@ def handle_ana_set_cal_counts_nr1(unit: int, c0: float, c1: float):
         print(f"  Invalid unit {unit}")
 
 def handle_ana_set_cal_counts(unit: int, c0: float, c1: float):
-    if isinstance(readout, nisoc_readout.ReadoutNR1):
-        handle_ana_set_cal_counts_nr1(unit, c0, c1)
-    else:
+    if isinstance(readout, nisoc_readout.ReadoutNR0):
         handle_ana_set_cal_counts_nr0(unit, c0, c1)
+    else:
+        handle_ana_set_cal_counts_nr1(unit, c0, c1)
 
 def handle_ana_set_active_counts(unit: str, counts: int):
     if unit in analog_unit_map:
@@ -427,7 +420,7 @@ def read_sector_csv(mv, sa, location, chunk_size=512):
     saved_array = np.zeros((chunk_size,16))
     for idx, address in enumerate(range(sa, sa + 65536, chunk_size)):
         #NDarray = read_chunk_retries_csv(mv, address, retries=3)
-        NDarray = retry(3, handle_read_data, address, mv, 1, 0, chunk_size)
+        NDarray = retry(3, handle_read_data, address, mv, 1, chunk_size)
         if idx == 0:
             saved_array = NDarray
         else:
@@ -464,7 +457,7 @@ def int_range(x, min: int, max: int, base=10) -> int:
     return x
 
 # positive int conversion
-def int_positive(x, base=10) -> int:
+def int_positive_auto(x, base=0) -> int:
     x = int(x, base=base)
     if x < 0:
         raise ArgumentTypeError(f"{x} must be positive")
@@ -474,7 +467,6 @@ def int_positive(x, base=10) -> int:
 parser = ArgumentParser(description="CLI for chip reads/writes")
 
 parser.add_argument('-p', '--port', help='the USB port where the chip reader is installed')
-
 parser.add_argument('-t', '--test', action='store_true', help='bypass real serial port')
 
 subparsers = parser.add_subparsers(title="command", description="commands", dest='command')
@@ -482,24 +474,24 @@ subparsers = parser.add_subparsers(title="command", description="commands", dest
 port_parser = subparsers.add_parser('list', help='list serial ports')
 
 read_parser = subparsers.add_parser('read', help='read data from the chip')
-read_parser.add_argument('--address', type=partial(int_positive, base=0), required=True, help='read start address')
-read_parser.add_argument('--sectors', type=partial(int_positive, base=0), required=True, help='number of sectors to read')
-read_parser.add_argument('--start', type=partial(int_positive, base=0), required=True, help='the lowest voltage at which to read the chip in mV')
-read_parser.add_argument('--stop', type=partial(int_positive, base=0), required=True, help='the highest voltage at which to read the chip in mV')
-read_parser.add_argument('--step', type=partial(int_positive, base=0), required=True, help='the granularity in mV')
+read_parser.add_argument('--address', type=int_positive_auto, required=True, help='read start address')
+read_parser.add_argument('--sectors', type=int_positive_auto, required=True, help='number of sectors to read')
+read_parser.add_argument('--start', type=int_positive_auto, required=True, help='the lowest voltage at which to read the chip in mV')
+read_parser.add_argument('--stop', type=int_positive_auto, required=True, help='the highest voltage at which to read the chip in mV')
+read_parser.add_argument('--step', type=int_positive_auto, required=True, help='the granularity in mV')
 read_parser.add_argument('-d', '--directory', required=True, help='folder to contain output data files (relative path)')
 read_parser.add_argument('--format', type=str, choices=['binary', 'csv'], default='binary', help='select data format')
-read_parser.add_argument('--chunk-size', type=partial(int_positive, base=0), default=512, help='size of read chunks; should evenly divide sector size')
+read_parser.add_argument('--chunk-size', type=int_positive_auto, default=512, help='size of read chunks; should evenly divide sector size')
 
 erase_parser = subparsers.add_parser('erase', help='erase by sector]')
-erase_parser.add_argument('--address', type=partial(int_positive, base=0), required=True, help='erase start address')
-erase_parser.add_argument('--sectors', type=partial(int_positive, base=0), required=True, help='number of sectors to erase')
+erase_parser.add_argument('--address', type=int_positive_auto, required=True, help='erase start address')
+erase_parser.add_argument('--sectors', type=int_positive_auto, required=True, help='number of sectors to erase')
 
 erase_chip_parser = subparsers.add_parser('erase-chip', help='erase entire chip')
 
 write_parser = subparsers.add_parser('write', help='write data to the chip')
-write_parser.add_argument('--address', type=partial(int_positive, base=0), required=True, help='write start address')
-write_parser.add_argument('--sectors', type=partial(int_positive, base=0), required=True, help='number of sectors to write')
+write_parser.add_argument('--address', type=int_positive_auto, required=True, help='write start address')
+write_parser.add_argument('--sectors', type=int_positive_auto, required=True, help='number of sectors to write')
 write_parser.add_argument('-v', '--value', type=partial(int_range, min=0, max=65535, base=0), required=True, help='the value to store in each word')
 
 write_chip_parser = subparsers.add_parser('write-chip', help='write data to the entire chip')
@@ -514,15 +506,15 @@ dac_calset_parser.add_argument('--c0', type=float, required=True, help='Calibrat
 dac_calset_parser.add_argument('--c1', type=float, required=True, help='Calibration C1 (gain) value')
 dac_activeset_parser = dac_subparsers.add_parser('set-active', help='set DAC active values')
 dac_activeset_parser.add_argument('unit', type=int, choices=[0, 1, 2, 3], help='DAC unit')
-dac_activeset_parser.add_argument('value', type=partial(int_positive, base=0), help='Active value')
+dac_activeset_parser.add_argument('value', type=int_positive_auto, help='Active value')
 
 cfg_parser = subparsers.add_parser('cfg', help='read/write configuration registers')
 cfg_subparsers = cfg_parser.add_subparsers(title="CFG commands", description="CFG commands", required=True, dest='cfg_command')
 cfg_write_parser = cfg_subparsers.add_parser('write', help='write to CFG register')
-cfg_write_parser.add_argument('address', type=partial(int_positive, base=0), help='cfg register address')
-cfg_write_parser.add_argument('value', type=partial(int_positive, base=0), help='write value')
+cfg_write_parser.add_argument('address', type=int_positive_auto, help='cfg register address')
+cfg_write_parser.add_argument('value', type=int_positive_auto, help='write value')
 cfg_read_parser = cfg_subparsers.add_parser('read', help='read from CFG register')
-cfg_read_parser.add_argument('address', type=partial(int_positive, base=0), help='cfg register address')
+cfg_read_parser.add_argument('address', type=int_positive_auto, help='cfg register address')
 
 flash_parser = subparsers.add_parser('flash', help='read/write interface FPGA configuration flash')
 flash_subparsers = flash_parser.add_subparsers(title='Flash commands', description='Flash commands', required=True, dest='flash_command')
@@ -530,14 +522,14 @@ flash_info_parser = flash_subparsers.add_parser('info', help='get flash info')
 flash_read_parser = flash_subparsers.add_parser('read', help='read data from flash')
 flash_read_parser.add_argument('-o', dest='out_path', help='output file path')
 flash_read_parser.add_argument('--hex', action='store_true', help='print as ascii hex instead of binary')
-flash_read_parser.add_argument('--offset', type=partial(int_positive, base=0), default=0, help='read starting at this address')
-flash_read_parser.add_argument('--length', type=partial(int_positive, base=0), default=128*1024*1024, help='number of bytes to read')
+flash_read_parser.add_argument('--offset', type=int_positive_auto, default=0, help='read starting at this address')
+flash_read_parser.add_argument('--length', type=int_positive_auto, default=128*1024*1024, help='number of bytes to read')
 flash_verify_parser = flash_subparsers.add_parser('verify', help='verify flash contents')
 flash_verify_parser.add_argument('binfile', help='file to verify against')
 flash_erase_chip_parser = flash_subparsers.add_parser('erase-chip', help='erase flash chip')
 flash_erase_parser = flash_subparsers.add_parser('erase', help='erase flash sectors')
-flash_erase_parser.add_argument('offset', type=partial(int_positive, base=0), help='erase from offset')
-flash_erase_parser.add_argument('length', type=partial(int_positive, base=0), help='number of bytes to erase')
+flash_erase_parser.add_argument('offset', type=int_positive_auto, help='erase from offset')
+flash_erase_parser.add_argument('length', type=int_positive_auto, help='number of bytes to erase')
 flash_write_parser = flash_subparsers.add_parser('write', help='write to flash')
 flash_write_parser.add_argument('binfile', help='file to write')
 
@@ -629,15 +621,14 @@ if args.command == 'list':
 
 # Read a sector or entire chip
 elif args.command == 'read':
-    if(args.directory and not os.path.exists(args.directory)):
+    if not os.path.exists(args.directory):
         os.mkdir(args.directory)
-    directory = args.directory if args.directory else '.'
-    print(directory)
+    print(args.directory)
 
     voltage_range = range(args.start, args.stop, args.step)
     sector_range = range(args.address, args.address + args.sectors*2**16, 2**16)
     write_csv = (args.format != 'binary')
-    read_chip_voltages(voltage_range, sector_range, location=directory, csv=write_csv, chunk_size=args.chunk_size)
+    read_chip_voltages(voltage_range, sector_range, location=args.directory, csv=write_csv, chunk_size=args.chunk_size)
 
 # Erase whole chip
 elif args.command == 'erase-chip':
