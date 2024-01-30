@@ -63,8 +63,8 @@ class ReadoutBase(ABC):
 		pass
 
 	@abstractmethod
-	def read_word(self, address: int, vt_mode: bool=False, read_mv: int=4000) -> int:
-		"""Read single word"""
+	def read_word(self, address: int, samples: int, vt_mode: bool=False, read_mv: int=4000) -> tuple[int, tuple[int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int]]:
+		"""Sample a single word a number of times"""
 		pass
 
 	@abstractmethod

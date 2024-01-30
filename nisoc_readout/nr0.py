@@ -117,7 +117,7 @@ class ReadoutNR0(ReadoutBase):
 		self.writefunc(cmd_data)
 		_ = read_rsp(self.readfunc, MSG_IDS['rsp_write_data'])
 
-	def read_word(self, address: int, vt_mode: bool=False, read_mv: int=4000) -> int:
+	def read_word(self, address: int, samples: int, vt_mode: bool=False, read_mv: int=4000) -> tuple[int, tuple[int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int]]:
 		raise NotImplementedError
 
 	def write_cfg(self, address: int, data: int) -> None:

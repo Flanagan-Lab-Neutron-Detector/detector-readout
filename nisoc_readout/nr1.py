@@ -113,18 +113,19 @@ class ReadoutNR1(ReadoutBase):
 		self.writefunc(cmd_data)
 		_ = read_rsp(self.readfunc, MSG_IDS['rsp_write_data'])
 
-	def read_word(self, address: int, vt_mode: bool=False, read_mv: int=4000) -> int:
-		cmd_len = 20
-		#rsp_len = 12
+	def read_word(self, address: int, samples: int, vt_mode: bool=False, read_mv: int=4000) -> tuple[int, tuple[int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int]]:
+		cmd_len = 24
+		#rsp_len = 72
 		cmd_data = make_cmd(cmd_len, MSG_IDS['cmd_read_word'])
-		struct.pack_into("<III", cmd_data, 4, 1 if vt_mode else 0, read_mv, address)
+		struct.pack_into("<IIII", cmd_data, 4, 1 if vt_mode else 0, read_mv, address, samples)
 		insert_crc(cmd_data)
 
 		self.writefunc(cmd_data)
 		rsp_data = read_rsp(self.readfunc, MSG_IDS['rsp_read_word'])
-		word, = struct.unpack_from("<H", rsp_data, 0)
+		sample_count, = struct.unpack_from("<I", rsp_data, 0)
+		samples = struct.unpack_from("<16I", rsp_data, 4)
 
-		return word
+		return sample_count, samples
 
 	def write_cfg(self, address: int, data: int) -> None:
 		cmd_len = 16
